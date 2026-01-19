@@ -139,6 +139,22 @@ func (HashPartitionStrategy) ShouldProcess(aggregateID string, partitionKey, tot
 	return partition == partitionKey
 }
 
+// RunMode determines how the processor handles event processing.
+type RunMode int
+
+const (
+	// RunModeContinuous runs forever, continuously polling for new events.
+	// This is the default mode for production use.
+	RunModeContinuous RunMode = iota
+
+	// RunModeOneOff processes all available events and exits cleanly.
+	// This mode is useful for:
+	// - Integration tests that need synchronous projection processing
+	// - One-time catch-up operations
+	// - Backfilling projections
+	RunModeOneOff
+)
+
 // ProcessorConfig configures a projection processor.
 type ProcessorConfig struct {
 	// PartitionStrategy determines which events this processor handles
@@ -162,6 +178,10 @@ type ProcessorConfig struct {
 	// A value of 0 means no delay (busy polling - not recommended).
 	// Default is 100ms, which provides a good balance between latency and CPU usage.
 	PollInterval time.Duration
+
+	// RunMode determines processing behavior.
+	// Default: RunModeContinuous
+	RunMode RunMode
 }
 
 // DefaultProcessorConfig returns the default configuration.
@@ -173,6 +193,7 @@ func DefaultProcessorConfig() ProcessorConfig {
 		PartitionStrategy: HashPartitionStrategy{},
 		Logger:            nil,                    // No logging by default
 		PollInterval:      100 * time.Millisecond, // Prevent CPU spinning
+		RunMode:           RunModeContinuous,      // Continuous mode by default
 	}
 }
 

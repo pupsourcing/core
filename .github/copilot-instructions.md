@@ -98,6 +98,7 @@ go test -p 1 -v -tags=integration ./es/adapters/postgres/integration_test/... ./
 - **Command**: `golangci-lint run` or `golangci-lint run --timeout=5m`
 - **Auto-fix**: Use `golangci-lint run --fix` to automatically fix simple linting issues
 - **Workflow**: Always run the linter after making code changes, and use `--fix` to resolve fixable issues efficiently
+- **MANDATORY**: After fixing any linting issues, **ALWAYS** run the linter globally (`golangci-lint run --timeout=5m`) to ensure no new issues were introduced elsewhere
 - **Enabled Linters**: gocritic, gocyclo, gosec, misspell, revive
 - **Formatters**: gofmt, goimports (with local prefix `github.com/getpup/pupsourcing`)
 - **Complexity**: Maximum cyclomatic complexity of 15

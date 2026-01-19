@@ -76,7 +76,18 @@ func (p *Processor) Run(ctx context.Context, proj projection.Projection) error {
 		err := p.processBatch(ctx, proj, aggregateTypeFilter, boundedContextFilter)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) || err.Error() == "no events in batch" {
-				// No events available - sleep to prevent CPU spinning
+				// No events available
+
+				// In one-off mode, clean exit when caught up
+				if p.config.RunMode == projection.RunModeOneOff {
+					if p.config.Logger != nil {
+						p.config.Logger.Info(ctx, "projection processor caught up (one-off mode)",
+							"projection", proj.Name())
+					}
+					return nil
+				}
+
+				// In continuous mode, sleep to prevent CPU spinning
 				if p.config.PollInterval > 0 {
 					select {
 					case <-ctx.Done():

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/getpup/pupsourcing/es"
+	"github.com/google/uuid"
 
 	v1 "github.com/getpup/pupsourcing/examples/eventmap-codegen/domain/user/events/v1"
 	v2 "github.com/getpup/pupsourcing/examples/eventmap-codegen/domain/user/events/v2"
@@ -100,17 +100,17 @@ func ToESEvents[T any](boundedContext string, aggregateType string, aggregateID 
 
 		event := es.Event{
 			BoundedContext: boundedContext,
-			AggregateType: aggregateType,
-			AggregateID:   aggregateID,
-			EventType:     eventType,
-			EventVersion:  version,
-			EventID:       uuid.New(),
-			Payload:       payload,
-			Metadata:      metadata,
-			CausationID:   options.causationID,
-			CorrelationID: options.correlationID,
-			TraceID:       options.traceID,
-			CreatedAt:     time.Now(),
+			AggregateType:  aggregateType,
+			AggregateID:    aggregateID,
+			EventType:      eventType,
+			EventVersion:   version,
+			EventID:        uuid.New(),
+			Payload:        payload,
+			Metadata:       metadata,
+			CausationID:    options.causationID,
+			CorrelationID:  options.correlationID,
+			TraceID:        options.traceID,
+			CreatedAt:      time.Now(),
 		}
 
 		result = append(result, event)
@@ -226,17 +226,17 @@ func ToUserDeletedV1(boundedContext string, aggregateType string, aggregateID st
 
 	return es.Event{
 		BoundedContext: boundedContext,
-		AggregateType: aggregateType,
-		AggregateID:   aggregateID,
-		EventType:     "UserDeleted",
-		EventVersion:  1,
-		EventID:       uuid.New(),
-		Payload:       payload,
-		Metadata:      metadata,
-		CausationID:   options.causationID,
-		CorrelationID: options.correlationID,
-		TraceID:       options.traceID,
-		CreatedAt:     time.Now(),
+		AggregateType:  aggregateType,
+		AggregateID:    aggregateID,
+		EventType:      "UserDeleted",
+		EventVersion:   1,
+		EventID:        uuid.New(),
+		Payload:        payload,
+		Metadata:       metadata,
+		CausationID:    options.causationID,
+		CorrelationID:  options.correlationID,
+		TraceID:        options.traceID,
+		CreatedAt:      time.Now(),
 	}, nil
 }
 
@@ -277,17 +277,17 @@ func ToUserEmailChangedV1(boundedContext string, aggregateType string, aggregate
 
 	return es.Event{
 		BoundedContext: boundedContext,
-		AggregateType: aggregateType,
-		AggregateID:   aggregateID,
-		EventType:     "UserEmailChanged",
-		EventVersion:  1,
-		EventID:       uuid.New(),
-		Payload:       payload,
-		Metadata:      metadata,
-		CausationID:   options.causationID,
-		CorrelationID: options.correlationID,
-		TraceID:       options.traceID,
-		CreatedAt:     time.Now(),
+		AggregateType:  aggregateType,
+		AggregateID:    aggregateID,
+		EventType:      "UserEmailChanged",
+		EventVersion:   1,
+		EventID:        uuid.New(),
+		Payload:        payload,
+		Metadata:       metadata,
+		CausationID:    options.causationID,
+		CorrelationID:  options.correlationID,
+		TraceID:        options.traceID,
+		CreatedAt:      time.Now(),
 	}, nil
 }
 
@@ -328,17 +328,17 @@ func ToUserRegisteredV1(boundedContext string, aggregateType string, aggregateID
 
 	return es.Event{
 		BoundedContext: boundedContext,
-		AggregateType: aggregateType,
-		AggregateID:   aggregateID,
-		EventType:     "UserRegistered",
-		EventVersion:  1,
-		EventID:       uuid.New(),
-		Payload:       payload,
-		Metadata:      metadata,
-		CausationID:   options.causationID,
-		CorrelationID: options.correlationID,
-		TraceID:       options.traceID,
-		CreatedAt:     time.Now(),
+		AggregateType:  aggregateType,
+		AggregateID:    aggregateID,
+		EventType:      "UserRegistered",
+		EventVersion:   1,
+		EventID:        uuid.New(),
+		Payload:        payload,
+		Metadata:       metadata,
+		CausationID:    options.causationID,
+		CorrelationID:  options.correlationID,
+		TraceID:        options.traceID,
+		CreatedAt:      time.Now(),
 	}, nil
 }
 
@@ -379,17 +379,17 @@ func ToUserRegisteredV2(boundedContext string, aggregateType string, aggregateID
 
 	return es.Event{
 		BoundedContext: boundedContext,
-		AggregateType: aggregateType,
-		AggregateID:   aggregateID,
-		EventType:     "UserRegistered",
-		EventVersion:  2,
-		EventID:       uuid.New(),
-		Payload:       payload,
-		Metadata:      metadata,
-		CausationID:   options.causationID,
-		CorrelationID: options.correlationID,
-		TraceID:       options.traceID,
-		CreatedAt:     time.Now(),
+		AggregateType:  aggregateType,
+		AggregateID:    aggregateID,
+		EventType:      "UserRegistered",
+		EventVersion:   2,
+		EventID:        uuid.New(),
+		Payload:        payload,
+		Metadata:       metadata,
+		CausationID:    options.causationID,
+		CorrelationID:  options.correlationID,
+		TraceID:        options.traceID,
+		CreatedAt:      time.Now(),
 	}, nil
 }
 
@@ -410,4 +410,3 @@ func FromUserRegisteredV2(pe es.PersistedEvent) (v2.UserRegistered, error) {
 
 	return e, nil
 }
-

@@ -233,3 +233,31 @@ func TestProcessorConfig_CustomPollInterval(t *testing.T) {
 		t.Errorf("Expected zero PollInterval, got %v", config2.PollInterval)
 	}
 }
+
+func TestRunMode_Constants(t *testing.T) {
+	// Ensure constants are defined correctly
+	if RunModeContinuous != 0 {
+		t.Error("RunModeContinuous should be 0 (default)")
+	}
+	if RunModeOneOff != 1 {
+		t.Error("RunModeOneOff should be 1")
+	}
+}
+
+func TestDefaultProcessorConfig_RunMode(t *testing.T) {
+	config := DefaultProcessorConfig()
+	if config.RunMode != RunModeContinuous {
+		t.Errorf("Expected default RunMode to be RunModeContinuous, got %v", config.RunMode)
+	}
+}
+
+func TestProcessorConfig_CustomRunMode(t *testing.T) {
+	// Users should be able to customize the run mode
+	config := ProcessorConfig{
+		RunMode: RunModeOneOff,
+	}
+
+	if config.RunMode != RunModeOneOff {
+		t.Errorf("Expected custom RunMode to be RunModeOneOff, got %v", config.RunMode)
+	}
+}

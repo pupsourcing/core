@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/getpup/pupsourcing/es"
+	"github.com/google/uuid"
 
 	v1 "github.com/getpup/pupsourcing/examples/eventmap-codegen/domain/user/events/v1"
 	v2 "github.com/getpup/pupsourcing/examples/eventmap-codegen/domain/user/events/v2"
@@ -102,7 +102,7 @@ func TestToESEvents(t *testing.T) {
 
 	// Test with slice of specific type (not []any)
 	events := []v1.UserDeleted{domainEvent}
-	
+
 	esEvents, err := ToESEvents(boundedContext, aggregateType, aggregateID, events)
 	if err != nil {
 		t.Fatalf("ToESEvents() failed: %v", err)
@@ -178,7 +178,7 @@ func TestOptions(t *testing.T) {
 	aggregateID := uuid.New().String()
 
 	domainEvent := v1.UserDeleted{}
-	
+
 	// Use options
 	esEvents, err := ToESEvents(
 		boundedContext,
