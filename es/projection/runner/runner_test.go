@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"sync/atomic"
 	"testing"
@@ -22,7 +23,7 @@ func (m *mockProjection) Name() string {
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (m *mockProjection) Handle(_ context.Context, _ es.PersistedEvent) error {
+func (m *mockProjection) Handle(_ context.Context, _ *sql.Tx, _ es.PersistedEvent) error {
 	atomic.AddInt32(&m.handleCount, 1)
 
 	if m.shouldFail {

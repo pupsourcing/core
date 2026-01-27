@@ -319,6 +319,10 @@ Version conflicts are detected automatically via database constraints. If concur
 
 Projections read events sequentially and maintain progress via checkpoints. They can be stopped and resumed without losing position.
 
+**Transaction Safety**: Each projection receives a `*sql.Tx` transaction in its `Handle` method. Use this transaction for atomic updates to your read model. The processor commits the transaction after successful handling, updating both your read model and the checkpoint atomically. Never commit or rollback the transaction yourself - the processor manages that.
+
+For non-SQL integrations (e.g., message brokers), you can ignore the transaction parameter - the checkpoint will still be tracked atomically.
+
 ### Horizontal Scaling
 
 Multiple projection processors can run in parallel using hash-based partitioning. Events for the same aggregate always go to the same partition, maintaining ordering.
@@ -367,10 +371,10 @@ if *partitionKey == -1 {
 
 Make projections safe for reprocessing:
 ```go
-func (p *Projection) Handle(ctx context.Context, event es.PersistedEvent) error {
-    // Get database connection from your application context or use a field
-    // Most projections will update a separate read model database
-    _, err := db.ExecContext(ctx,
+func (p *Projection) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
+    // Use the provided transaction for atomic updates to your read model
+    // The processor commits the transaction after successful handling
+    _, err := tx.ExecContext(ctx,
         "INSERT INTO read_model (id, data) VALUES ($1, $2)"+
         "ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data",
         id, data)

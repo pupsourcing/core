@@ -219,8 +219,8 @@ func (p *Processor) processBatch(ctx context.Context, proj projection.Projection
 			continue
 		}
 
-		// Handle event - projection manages its own persistence
-		handlerErr := proj.Handle(ctx, event)
+		// Handle event - projection can use the transaction for atomic updates
+		handlerErr := proj.Handle(ctx, tx, event)
 		if handlerErr != nil {
 			if p.config.Logger != nil {
 				p.config.Logger.Error(ctx, "projection handler error",

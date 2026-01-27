@@ -130,7 +130,7 @@ func (p *testProjection) Name() string {
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *testProjection) Handle(ctx context.Context, event es.PersistedEvent) error {
+func (p *testProjection) Handle(ctx context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.events = append(p.events, event)
@@ -346,7 +346,7 @@ func (p *errorProjection) Name() string {
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *errorProjection) Handle(ctx context.Context, event es.PersistedEvent) error {
+func (p *errorProjection) Handle(ctx context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	return fmt.Errorf("intentional error")
 }
 

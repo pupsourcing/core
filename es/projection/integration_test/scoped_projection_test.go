@@ -9,6 +9,7 @@ package integration_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"sync"
@@ -33,7 +34,7 @@ func (p *globalProjection) Name() string {
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *globalProjection) Handle(_ context.Context, event es.PersistedEvent) error {
+func (p *globalProjection) Handle(_ context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.receivedEvents = append(p.receivedEvents, event)
@@ -70,7 +71,7 @@ func (p *scopedProjection) BoundedContexts() []string {
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *scopedProjection) Handle(_ context.Context, event es.PersistedEvent) error {
+func (p *scopedProjection) Handle(_ context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.receivedEvents = append(p.receivedEvents, event)

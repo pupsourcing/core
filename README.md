@@ -148,9 +148,10 @@ func (p *UserReadModelProjection) BoundedContexts() []string {
     return []string{"Identity"}  // Only receives events from Identity context
 }
 
-func (p *UserReadModelProjection) Handle(ctx context.Context, event es.PersistedEvent) error {
-    // Update read model based on User events from Identity context only
-    // Projection manages its own persistence
+func (p *UserReadModelProjection) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
+    // Update read model using the provided transaction for atomic consistency
+    // The transaction is committed by the processor after successful handling
+    // IMPORTANT: Do NOT commit or rollback the transaction - the processor manages that
     return nil
 }
 

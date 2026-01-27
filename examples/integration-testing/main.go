@@ -27,7 +27,7 @@ func (p *UserProjection) Name() string {
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *UserProjection) Handle(_ context.Context, event es.PersistedEvent) error {
+func (p *UserProjection) Handle(_ context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	if event.AggregateType == "User" && event.EventType == "UserCreated" {
 		p.userCount++
 	}

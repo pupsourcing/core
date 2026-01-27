@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 
@@ -26,7 +27,7 @@ func (p *UserProjection) Name() string {
 // Handle demonstrates the recommended pattern for using FromESEvent in projections.
 // This allows you to work with strongly-typed domain events instead of raw persisted events.
 // nolint:gocritic // it's fine
-func (p *UserProjection) Handle(_ context.Context, event es.PersistedEvent) error {
+func (p *UserProjection) Handle(_ context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	// Convert the persisted event to a domain event using the generated FromESEvent function
 	domainEvent, err := persistence.FromESEvent(event)
 	if err != nil {

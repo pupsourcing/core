@@ -2,6 +2,7 @@ package projection
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -21,7 +22,7 @@ func (p *mockGlobalProjection) Name() string {
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *mockGlobalProjection) Handle(_ context.Context, event es.PersistedEvent) error {
+func (p *mockGlobalProjection) Handle(_ context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	p.receivedEvents = append(p.receivedEvents, event)
 	return nil
 }
@@ -47,7 +48,7 @@ func (p *mockScopedProjection) BoundedContexts() []string {
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *mockScopedProjection) Handle(_ context.Context, event es.PersistedEvent) error {
+func (p *mockScopedProjection) Handle(_ context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	p.receivedEvents = append(p.receivedEvents, event)
 	return nil
 }

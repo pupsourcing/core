@@ -214,8 +214,9 @@ func (p *MyProjection) Name() string {
     return "my_projection"
 }
 
-func (p *MyProjection) Handle(ctx context.Context, tx es.DBTX, event es.PersistedEvent) error {
+func (p *MyProjection) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
     // Process event - update read model, send notifications, etc.
+    // Use tx for atomic SQL updates, or ignore for non-SQL integrations
     return nil
 }
 ```

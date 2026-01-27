@@ -10,6 +10,7 @@ package integration_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -42,7 +43,7 @@ func (p *testProjection) Name() string {
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *testProjection) Handle(ctx context.Context, event es.PersistedEvent) error {
+func (p *testProjection) Handle(ctx context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.events = append(p.events, event)

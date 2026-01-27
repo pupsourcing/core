@@ -72,7 +72,7 @@ func (p *UserReadModelProjection) BoundedContexts() []string {
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *UserReadModelProjection) Handle(_ context.Context, event es.PersistedEvent) error {
+func (p *UserReadModelProjection) Handle(_ context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	if event.EventType == "UserCreated" {
 		var payload UserCreated
 		if err := json.Unmarshal(event.Payload, &payload); err != nil {
@@ -106,7 +106,7 @@ func (p *OrderReadModelProjection) BoundedContexts() []string {
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *OrderReadModelProjection) Handle(_ context.Context, event es.PersistedEvent) error {
+func (p *OrderReadModelProjection) Handle(_ context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	if event.EventType == "OrderPlaced" {
 		var payload OrderPlaced
 		if err := json.Unmarshal(event.Payload, &payload); err != nil {
@@ -133,7 +133,7 @@ func (p *WatermillIntegrationProjection) Name() string {
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *WatermillIntegrationProjection) Handle(_ context.Context, event es.PersistedEvent) error {
+func (p *WatermillIntegrationProjection) Handle(_ context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	// In a real implementation, this would publish to a message broker
 	p.publishedCount++
 	log.Printf("[Watermill] Publishing event to message broker: %s/%s (count: %d)",

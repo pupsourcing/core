@@ -113,7 +113,9 @@ func (p *UserProjection) Name() string {
     return "user_list"
 }
 
-func (p *UserProjection) Handle(ctx context.Context, event es.PersistedEvent) error {
+func (p *UserProjection) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
+    // The processor provides a transaction for atomic updates
+    // In this example we use in-memory state, but typically you'd use tx for database operations
     if event.EventType == "UserCreated" {
         var payload UserCreated
         json.Unmarshal(event.Payload, &payload)

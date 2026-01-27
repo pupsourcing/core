@@ -31,8 +31,9 @@ func (p *UserReadModelProjection) BoundedContexts() []string {
     return []string{"Identity"}  // Only receives Identity context events
 }
 
-func (p *UserReadModelProjection) Handle(ctx context.Context, event es.PersistedEvent) error {
+func (p *UserReadModelProjection) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
     // Only User events arrive here
+    // Use the provided transaction for atomic updates
     return nil
 }
 ```
@@ -56,9 +57,46 @@ func (p *WatermillIntegrationProjection) Name() string {
 }
 
 // Does NOT implement AggregateTypes() - receives ALL events
-func (p *WatermillIntegrationProjection) Handle(ctx context.Context, event es.PersistedEvent) error {
+func (p *WatermillIntegrationProjection) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
     // ALL events arrive here - publish to message broker
+    // For non-SQL integrations, you can ignore the tx parameter
     return nil
+}
+```
+
+### Transactional Consistency
+
+The processor provides a transaction (`*sql.Tx`) to the projection's `Handle` method, ensuring atomic updates:
+
+1. **Atomic Updates**: Your read model updates and checkpoint progress are committed together in one transaction
+2. **Exactly-Once Semantics**: If the projection fails, neither the read model nor the checkpoint is updated
+3. **No Manual Transaction Management**: The processor handles commit/rollback - projections should never call `Commit()` or `Rollback()`
+4. **Non-SQL Integrations**: If publishing to message brokers or external systems, you can ignore the `tx` parameter - the checkpoint is still tracked atomically
+
+Example with SQL read model:
+```go
+func (p *UserReadModelProjection) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
+    // Parse event payload
+    var payload struct {
+        Name string `json:"name"`
+    }
+    json.Unmarshal(event.Payload, &payload)
+    
+    // Use tx for atomic updates to read model
+    _, err := tx.ExecContext(ctx, 
+        "INSERT INTO user_read_model (id, name) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name",
+        event.AggregateID, payload.Name)
+    return err
+    // Processor commits tx after this returns nil, updating both read model and checkpoint
+}
+```
+
+Example with non-SQL integration:
+```go
+func (p *WatermillProjection) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
+    // Publish to message broker - ignore tx parameter
+    return publisher.Publish(ctx, event)
+    // Processor commits tx after this returns nil, updating only the checkpoint
 }
 ```
 

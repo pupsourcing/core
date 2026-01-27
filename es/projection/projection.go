@@ -3,6 +3,7 @@ package projection
 
 import (
 	"context"
+	"database/sql"
 	"hash/fnv"
 	"time"
 
@@ -20,16 +21,23 @@ type Projection interface {
 	// Handle processes a single event.
 	// Return an error to stop projection processing.
 	//
-	// Projections are responsible for managing their own persistence.
-	// For SQL projections, they should manage their own database connections/transactions.
-	// For non-SQL projections (Elasticsearch, Redis, message brokers), they use appropriate clients.
+	// The tx parameter is the processor's transaction used for checkpoint management.
+	// SQL projections can use this transaction to ensure atomic updates of both
+	// the read model and the checkpoint. This eliminates inconsistencies where
+	// a projection succeeds but the checkpoint update fails (or vice versa).
+	//
+	// The transaction will be committed by the processor after Handle returns successfully.
+	// Projections should NEVER call Commit() or Rollback() on the provided transaction.
+	//
+	// For non-SQL projections (Elasticsearch, Redis, message brokers), the tx parameter
+	// should be ignored and projections should manage their own connections as before.
 	//
 	// Event is passed by value to enforce immutability (events are value objects).
 	// Large data (Payload, Metadata byte slices) share references to their backing arrays,
 	// so the actual payload/metadata data is not deep-copied.
 	//
 	//nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-	Handle(ctx context.Context, event es.PersistedEvent) error
+	Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error
 }
 
 // ScopedProjection is an optional interface that projections can implement to filter
@@ -56,8 +64,9 @@ type Projection interface {
 //	   return []string{"Identity"}
 //	}
 //
-//	func (p *UserReadModelProjection) Handle(ctx context.Context, event es.PersistedEvent) error {
+//	func (p *UserReadModelProjection) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
 //	   // Only receives User aggregate events from Identity bounded context
+//	   // Use tx for atomic read model updates with checkpoint
 //	   return nil
 //	}
 //
@@ -77,7 +86,7 @@ type Projection interface {
 //	   return []string{"Sales", "Billing"}
 //	}
 //
-//	func (p *OrderRevenueProjection) Handle(ctx context.Context, event es.PersistedEvent) error {
+//	func (p *OrderRevenueProjection) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
 //	   // Receives Order events from both Sales and Billing contexts
 //	   return nil
 //	}
@@ -90,8 +99,10 @@ type Projection interface {
 //	   return "system.integration.watermill.v1"
 //	}
 //
-//	func (p *WatermillPublisher) Handle(ctx context.Context, event es.PersistedEvent) error {
+//	func (p *WatermillPublisher) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
 //	   // Receives ALL events from all contexts for publishing to message broker
+//	   // Ignore tx parameter - use message broker client
+//	   _ = tx
 //	   return nil
 //	}
 type ScopedProjection interface {
