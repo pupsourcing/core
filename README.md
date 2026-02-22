@@ -162,6 +162,52 @@ processor := postgres.NewProcessor(db, store, &config)
 err := processor.Run(ctx, &UserReadModelProjection{})
 ```
 
+Optional optimization for many projections in one process (best-effort wake signals with explicit lifecycle):
+
+```go
+runCtx, cancel := context.WithCancel(ctx)
+defer cancel()
+
+dispatcher := projection.NewDispatcher(db, store, nil) // uses DefaultDispatcherConfig
+dispatcherErrCh := make(chan error, 1)
+go func() {
+    dispatcherErrCh <- dispatcher.Run(runCtx)
+}()
+
+projectionsSlice := []projection.Projection{
+    &UserReadModelProjection{},
+    &AnotherProjection{},
+}
+
+runners := make([]runner.ProjectionRunner, len(projectionsSlice))
+for i, proj := range projectionsSlice {
+    cfg := projection.DefaultProcessorConfig()
+    cfg.WakeupSource = dispatcher // correctness still relies on checkpoints + fallback polling
+    cfg.PollInterval = 500 * time.Millisecond
+    cfg.MaxPollInterval = 8 * time.Second
+
+    runners[i] = runner.ProjectionRunner{
+        Projection: proj,
+        Processor:  postgres.NewProcessor(db, store, &cfg),
+    }
+}
+
+runErr := runner.New().Run(runCtx, runners)
+cancel() // ensure dispatcher stops even if runner exits first
+dispatcherErr := <-dispatcherErrCh
+
+if runErr != nil && !errors.Is(runErr, context.Canceled) {
+    return runErr
+}
+if dispatcherErr != nil &&
+    !errors.Is(dispatcherErr, context.Canceled) &&
+    !errors.Is(dispatcherErr, context.DeadlineExceeded) {
+    // Optional: log warning; projections remain correct via fallback polling.
+}
+```
+
+See the full runnable version in [`examples/dispatcher-runner`](./examples/dispatcher-runner/).
+
 ## Documentation
 
 Comprehensive documentation is available at **[https://pupsourcing.gopup.dev](https://pupsourcing.gopup.dev)**:
@@ -180,6 +226,7 @@ Complete runnable examples are available in the [`examples/`](./examples) direct
 
 - **[Single Worker](./examples/single-worker/)** - Basic projection pattern
 - **[Multiple Projections](./examples/multiple-projections/)** - Running different projections concurrently
+- **[Dispatcher + Runner](./examples/dispatcher-runner/)** - Safe dispatcher lifecycle with wakeup optimization
 - **[Worker Pool](./examples/worker-pool/)** - Multiple workers in the same process
 - **[Partitioned](./examples/partitioned/)** - Horizontal scaling across processes
 - **[With Logging](./examples/with-logging/)** - Observability and debugging

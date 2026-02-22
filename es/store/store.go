@@ -56,6 +56,14 @@ type EventReader interface {
 	ReadEvents(ctx context.Context, tx es.DBTX, fromPosition int64, limit int) ([]es.PersistedEvent, error)
 }
 
+// GlobalPositionReader defines the interface for reading the latest global event position.
+// This is useful for lightweight "new events available" checks without loading full batches.
+type GlobalPositionReader interface {
+	// GetLatestGlobalPosition returns the highest global_position currently present in the event log.
+	// Returns 0 when no events exist.
+	GetLatestGlobalPosition(ctx context.Context, tx es.DBTX) (int64, error)
+}
+
 // AggregateStreamReader defines the interface for reading events for a specific aggregate.
 type AggregateStreamReader interface {
 	// ReadAggregateStream reads all events for a specific aggregate instance and returns

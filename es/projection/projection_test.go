@@ -213,6 +213,18 @@ func TestDefaultProcessorConfig(t *testing.T) {
 	if config.PollInterval != expectedPollInterval {
 		t.Errorf("Expected PollInterval %v, got %v", expectedPollInterval, config.PollInterval)
 	}
+	if config.MaxPollInterval != 5*time.Second {
+		t.Errorf("Expected MaxPollInterval 5s, got %v", config.MaxPollInterval)
+	}
+	if config.PollBackoffFactor != 2.0 {
+		t.Errorf("Expected PollBackoffFactor 2.0, got %v", config.PollBackoffFactor)
+	}
+	if config.WakeupJitter != 25*time.Millisecond {
+		t.Errorf("Expected WakeupJitter 25ms, got %v", config.WakeupJitter)
+	}
+	if config.WakeupSource != nil {
+		t.Error("Expected WakeupSource to be nil by default")
+	}
 }
 
 func TestProcessorConfig_CustomPollInterval(t *testing.T) {

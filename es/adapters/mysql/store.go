@@ -428,6 +428,27 @@ func (s *Store) ReadEvents(ctx context.Context, tx es.DBTX, fromPosition int64, 
 	return events, nil
 }
 
+// GetLatestGlobalPosition implements store.GlobalPositionReader.
+func (s *Store) GetLatestGlobalPosition(ctx context.Context, tx es.DBTX) (int64, error) {
+	query := fmt.Sprintf(`
+		SELECT global_position
+		FROM %s
+		ORDER BY global_position DESC
+		LIMIT 1
+	`, s.config.EventsTable)
+
+	var position int64
+	err := tx.QueryRowContext(ctx, query).Scan(&position)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	return position, nil
+}
+
 // ReadAggregateStream implements store.AggregateStreamReader.
 //
 //nolint:gocyclo // Complexity comes from necessary UUID parsing and error handling

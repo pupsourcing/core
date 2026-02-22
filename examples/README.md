@@ -216,7 +216,25 @@ cd scoped-projections
 go run main.go
 ```
 
-### 8. [Custom Logging](./with-logging/)
+### 8. [Dispatcher + Runner](./dispatcher-runner/)
+**Difficulty:** Intermediate  
+**Best for:** Reducing idle projection polling in multi-projection processes
+
+Demonstrates how to wire a process-local dispatcher with runner-managed projections and shut down cleanly using a timeout-bound context.
+
+**What you'll learn:**
+- Wiring `projection.NewDispatcher` with projection processors
+- Passing dispatcher wake signals into runner-managed projection processors
+- Running dispatcher and runner with explicit lifecycle coordination
+- Bounded execution using `context.WithTimeout` (no hanging goroutines)
+
+**Run it:**
+```bash
+cd dispatcher-runner
+go run main.go
+```
+
+### 9. [Custom Logging](./with-logging/)
 **Difficulty:** Beginner  
 **Best for:** Production observability integration
 

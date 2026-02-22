@@ -56,6 +56,15 @@ func (p *Processor) Run(ctx context.Context, proj projection.Projection) error {
 			"batch_size", p.config.BatchSize)
 	}
 
+	var wakeupCh <-chan struct{}
+	unsubscribe := func() {}
+	if p.config.WakeupSource != nil {
+		wakeupCh, unsubscribe = p.config.WakeupSource.Subscribe()
+	}
+	defer unsubscribe()
+
+	idleDelay := p.config.PollInterval
+
 	// Build aggregate type and bounded context filters once for the projection (not per batch)
 	aggregateTypeFilter := buildAggregateTypeFilter(proj)
 	boundedContextFilter := buildBoundedContextFilter(proj)
@@ -76,26 +85,16 @@ func (p *Processor) Run(ctx context.Context, proj projection.Projection) error {
 		err := p.processBatch(ctx, proj, aggregateTypeFilter, boundedContextFilter)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) || err.Error() == "no events in batch" {
-				// No events available
+				nextIdleDelay, shouldStop, waitErr := p.handleIdleCycle(ctx, proj, wakeupCh, idleDelay)
+				if waitErr != nil {
+					return waitErr
+				}
 
-				// In one-off mode, clean exit when caught up
-				if p.config.RunMode == projection.RunModeOneOff {
-					if p.config.Logger != nil {
-						p.config.Logger.Info(ctx, "projection processor caught up (one-off mode)",
-							"projection", proj.Name())
-					}
+				if shouldStop {
 					return nil
 				}
 
-				// In continuous mode, sleep to prevent CPU spinning
-				if p.config.PollInterval > 0 {
-					select {
-					case <-ctx.Done():
-						return ctx.Err()
-					case <-time.After(p.config.PollInterval):
-						// Continue to next batch
-					}
-				}
+				idleDelay = nextIdleDelay
 				continue
 			}
 			if p.config.Logger != nil {
@@ -105,7 +104,188 @@ func (p *Processor) Run(ctx context.Context, proj projection.Projection) error {
 			}
 			return fmt.Errorf("%w: %v", ErrProjectionStopped, err)
 		}
+
+		idleDelay = p.resetIdleDelay(ctx, proj, idleDelay)
 	}
+}
+
+func (p *Processor) handleIdleCycle(ctx context.Context, proj projection.Projection, wakeupCh <-chan struct{}, idleDelay time.Duration) (time.Duration, bool, error) {
+	if p.config.RunMode == projection.RunModeOneOff {
+		if p.config.Logger != nil {
+			p.config.Logger.Info(ctx, "projection processor caught up (one-off mode)",
+				"projection", proj.Name())
+		}
+		return idleDelay, true, nil
+	}
+
+	if p.config.Logger != nil {
+		p.config.Logger.Debug(ctx, "projection idle polling",
+			"projection", proj.Name(),
+			"partition_key", p.config.PartitionKey,
+			"total_partitions", p.config.TotalPartitions,
+			"idle_delay", idleDelay,
+			"wakeup_source_enabled", wakeupCh != nil)
+	}
+
+	wokeBySignal, waitErr := p.waitForNextBatch(ctx, proj.Name(), wakeupCh, idleDelay)
+	if waitErr != nil {
+		return idleDelay, false, waitErr
+	}
+
+	waitReason := "fallback_timer"
+	nextIdleDelay := p.nextPollDelay(idleDelay)
+	if wokeBySignal {
+		waitReason = "signal"
+		nextIdleDelay = p.config.PollInterval
+	}
+
+	if p.config.Logger != nil {
+		p.config.Logger.Debug(ctx, "projection idle wait completed",
+			"projection", proj.Name(),
+			"partition_key", p.config.PartitionKey,
+			"total_partitions", p.config.TotalPartitions,
+			"wait_reason", waitReason,
+			"idle_delay", idleDelay,
+			"next_idle_delay", nextIdleDelay,
+			"wakeup_source_enabled", wakeupCh != nil)
+	}
+
+	return nextIdleDelay, false, nil
+}
+
+func (p *Processor) resetIdleDelay(ctx context.Context, proj projection.Projection, currentDelay time.Duration) time.Duration {
+	if currentDelay != p.config.PollInterval && p.config.Logger != nil {
+		p.config.Logger.Debug(ctx, "projection idle backoff reset",
+			"projection", proj.Name(),
+			"partition_key", p.config.PartitionKey,
+			"total_partitions", p.config.TotalPartitions,
+			"previous_idle_delay", currentDelay,
+			"next_idle_delay", p.config.PollInterval)
+	}
+
+	return p.config.PollInterval
+}
+
+func (p *Processor) waitForNextBatch(ctx context.Context, projectionName string, wakeupCh <-chan struct{}, delay time.Duration) (bool, error) {
+	if p.config.Logger != nil {
+		p.config.Logger.Debug(ctx, "projection idle wait starting",
+			"projection", projectionName,
+			"partition_key", p.config.PartitionKey,
+			"total_partitions", p.config.TotalPartitions,
+			"idle_delay", delay,
+			"wakeup_source_enabled", wakeupCh != nil)
+	}
+
+	if wakeupCh == nil {
+		if delay <= 0 {
+			if p.config.Logger != nil {
+				p.config.Logger.Debug(ctx, "projection idle wait skipped",
+					"projection", projectionName,
+					"partition_key", p.config.PartitionKey,
+					"total_partitions", p.config.TotalPartitions,
+					"reason", "busy_poll_no_delay")
+			}
+			return false, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-time.After(delay):
+			return false, nil
+		}
+	}
+
+	if delay <= 0 {
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-wakeupCh:
+			return true, p.applyWakeupJitter(ctx, projectionName)
+		}
+	}
+
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	case <-wakeupCh:
+		return true, p.applyWakeupJitter(ctx, projectionName)
+	case <-timer.C:
+		return false, nil
+	}
+}
+
+func (p *Processor) applyWakeupJitter(ctx context.Context, projectionName string) error {
+	if p.config.WakeupJitter <= 0 {
+		if p.config.Logger != nil {
+			p.config.Logger.Debug(ctx, "projection wakeup jitter skipped",
+				"projection", projectionName,
+				"partition_key", p.config.PartitionKey,
+				"total_partitions", p.config.TotalPartitions,
+				"reason", "jitter_disabled")
+		}
+		return nil
+	}
+
+	jitter := time.Duration((time.Now().UnixNano() + int64(p.config.PartitionKey+1)) % int64(p.config.WakeupJitter))
+	if jitter <= 0 {
+		if p.config.Logger != nil {
+			p.config.Logger.Debug(ctx, "projection wakeup jitter skipped",
+				"projection", projectionName,
+				"partition_key", p.config.PartitionKey,
+				"total_partitions", p.config.TotalPartitions,
+				"reason", "computed_zero_jitter")
+		}
+		return nil
+	}
+
+	if p.config.Logger != nil {
+		p.config.Logger.Debug(ctx, "projection wakeup jitter waiting",
+			"projection", projectionName,
+			"partition_key", p.config.PartitionKey,
+			"total_partitions", p.config.TotalPartitions,
+			"jitter_delay", jitter)
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(jitter):
+		return nil
+	}
+}
+
+func (p *Processor) nextPollDelay(current time.Duration) time.Duration {
+	if p.config.PollInterval <= 0 {
+		return 0
+	}
+
+	maxDelay := p.config.MaxPollInterval
+	if maxDelay <= 0 {
+		maxDelay = p.config.PollInterval
+	}
+
+	if current <= 0 {
+		current = p.config.PollInterval
+	}
+
+	factor := p.config.PollBackoffFactor
+	if factor <= 1 {
+		if current > maxDelay {
+			return maxDelay
+		}
+		return current
+	}
+
+	next := time.Duration(float64(current) * factor)
+	if next > maxDelay {
+		return maxDelay
+	}
+
+	return next
 }
 
 // buildAggregateTypeFilter builds a filter map for scoped projections.

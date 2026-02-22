@@ -166,6 +166,15 @@ const (
 	RunModeOneOff
 )
 
+// WakeupSource provides best-effort wake signals to projection processors.
+// Signals are intentionally lossy/coalesced and should only be used as an
+// optimization hint. Correctness must always rely on checkpoint-based pulling.
+type WakeupSource interface {
+	// Subscribe registers a projection processor for wake signals.
+	// Returns a receive-only signal channel and an unsubscribe function.
+	Subscribe() (signals <-chan struct{}, unsubscribe func())
+}
+
 // ProcessorConfig configures a projection processor.
 type ProcessorConfig struct {
 	// PartitionStrategy determines which events this processor handles
@@ -175,6 +184,30 @@ type ProcessorConfig struct {
 	// If nil, logging is disabled (zero overhead).
 	Logger es.Logger
 
+	// WakeupSource is an optional best-effort signal source.
+	// If nil, processors rely purely on PollInterval fallback polling.
+	WakeupSource WakeupSource
+
+	// PollBackoffFactor controls exponential backoff growth for idle fallback polling.
+	// Values <= 1 disable growth (constant PollInterval fallback).
+	// Default is 2.0.
+	PollBackoffFactor float64
+
+	// PollInterval is the duration to wait when no events are available.
+	// This prevents tight polling loops that consume excessive CPU.
+	// A value of 0 means no delay (busy polling - not recommended).
+	// Default is 100ms, which provides a good balance between latency and CPU usage.
+	PollInterval time.Duration
+
+	// MaxPollInterval is the upper bound for idle fallback polling when backoff is enabled.
+	// Default is 5s.
+	MaxPollInterval time.Duration
+
+	// WakeupJitter is the random delay applied after receiving a wake signal.
+	// This helps smooth spikes when many projections wake at once.
+	// Default is 25ms.
+	WakeupJitter time.Duration
+
 	// BatchSize is the number of events to read per batch
 	BatchSize int
 
@@ -183,12 +216,6 @@ type ProcessorConfig struct {
 
 	// TotalPartitions is the total number of processor instances
 	TotalPartitions int
-
-	// PollInterval is the duration to wait when no events are available.
-	// This prevents tight polling loops that consume excessive CPU.
-	// A value of 0 means no delay (busy polling - not recommended).
-	// Default is 100ms, which provides a good balance between latency and CPU usage.
-	PollInterval time.Duration
 
 	// RunMode determines processing behavior.
 	// Default: RunModeContinuous
@@ -204,6 +231,10 @@ func DefaultProcessorConfig() ProcessorConfig {
 		PartitionStrategy: HashPartitionStrategy{},
 		Logger:            nil,                    // No logging by default
 		PollInterval:      100 * time.Millisecond, // Prevent CPU spinning
+		MaxPollInterval:   5 * time.Second,        // Bound idle backoff
+		PollBackoffFactor: 2.0,                    // Exponential backoff by default
+		WakeupJitter:      25 * time.Millisecond,  // Smooth wake-up spikes
+		WakeupSource:      nil,                    // No dispatcher by default
 		RunMode:           RunModeContinuous,      // Continuous mode by default
 	}
 }
