@@ -4,7 +4,11 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/getpup/pupsourcing)](https://goreportcard.com/report/github.com/getpup/pupsourcing)
 [![GoDoc](https://godoc.org/github.com/getpup/pupsourcing?status.svg)](https://godoc.org/github.com/getpup/pupsourcing)
 
-A production-ready Event Sourcing library for Go with clean architecture principles.
+<div>
+<img width="300" height="300" alt="response" src="https://github.com/user-attachments/assets/113ffeea-b8e3-497a-b0df-3ef903a70540" align="center" />
+</div>
+
+A production-ready Event Sourcing library for Go.
 
 ## Overview
 
@@ -12,7 +16,7 @@ pupsourcing provides minimal, reliable infrastructure for event sourcing in Go a
 
 ## Key Features
 
-- **Clean Architecture** - Core interfaces are datastore-agnostic; no "infrastructure creep" into your domain model (no annotations, no framework-specific base classes)
+- **Clean Architecture** - no "infrastructure creep" into your domain model (no annotations, no framework-specific base structs)
 - **Multiple Database Adapters** - PostgreSQL, SQLite, and MySQL/MariaDB
 - **Bounded Context Support** - Events are scoped to bounded contexts for domain-driven design alignment
 - **Optimistic Concurrency** - Automatic conflict detection via database constraints
