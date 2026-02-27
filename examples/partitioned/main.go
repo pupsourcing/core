@@ -30,7 +30,7 @@ import (
 
 	"github.com/getpup/pupsourcing/es"
 	"github.com/getpup/pupsourcing/es/adapters/postgres"
-	"github.com/getpup/pupsourcing/es/projection"
+	"github.com/getpup/pupsourcing/es/consumer"
 )
 
 // UserCreated is a sample event payload
@@ -121,7 +121,7 @@ func main() {
 	proj := &PartitionedProjection{partitionKey: *partitionKey}
 
 	// Configure processor with partitioning
-	config := projection.DefaultProcessorConfig()
+	config := consumer.DefaultProcessorConfig()
 	config.PartitionKey = *partitionKey
 	config.TotalPartitions = *totalPartitions
 

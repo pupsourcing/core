@@ -13,8 +13,8 @@ import (
 
 	"github.com/getpup/pupsourcing/es"
 	"github.com/getpup/pupsourcing/es/adapters/sqlite"
+	"github.com/getpup/pupsourcing/es/consumer"
 	"github.com/getpup/pupsourcing/es/migrations"
-	"github.com/getpup/pupsourcing/es/projection"
 )
 
 // UserProjection is a simple projection that counts user events
@@ -77,8 +77,8 @@ func run() error {
 
 	// Process with one-off mode
 	proj := &UserProjection{}
-	config := projection.DefaultProcessorConfig()
-	config.RunMode = projection.RunModeOneOff
+	config := consumer.DefaultProcessorConfig()
+	config.RunMode = consumer.RunModeOneOff
 
 	processor := sqlite.NewProcessor(db, store, &config)
 
@@ -120,7 +120,7 @@ func setupDatabase() (*sql.DB, error) {
 		OutputFolder:        tmpDir,
 		OutputFilename:      migrationFilename,
 		EventsTable:         "events",
-		CheckpointsTable:    "projection_checkpoints",
+		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
 	}
 

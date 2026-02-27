@@ -1,4 +1,4 @@
-package projection
+package consumer
 
 import (
 	"context"
@@ -11,75 +11,75 @@ import (
 	"github.com/getpup/pupsourcing/es"
 )
 
-// mockGlobalProjection is a projection that receives all events
-type mockGlobalProjection struct {
+// mockGlobalConsumer is a consumer that receives all events
+type mockGlobalConsumer struct {
 	name           string
 	receivedEvents []es.PersistedEvent
 }
 
-func (p *mockGlobalProjection) Name() string {
+func (p *mockGlobalConsumer) Name() string {
 	return p.name
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *mockGlobalProjection) Handle(_ context.Context, _ *sql.Tx, event es.PersistedEvent) error {
+func (p *mockGlobalConsumer) Handle(_ context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	p.receivedEvents = append(p.receivedEvents, event)
 	return nil
 }
 
-// mockScopedProjection is a projection that only receives specific aggregate types
-type mockScopedProjection struct {
+// mockScopedConsumer is a consumer that only receives specific aggregate types
+type mockScopedConsumer struct {
 	name            string
 	aggregateTypes  []string
 	boundedContexts []string
 	receivedEvents  []es.PersistedEvent
 }
 
-func (p *mockScopedProjection) Name() string {
+func (p *mockScopedConsumer) Name() string {
 	return p.name
 }
 
-func (p *mockScopedProjection) AggregateTypes() []string {
+func (p *mockScopedConsumer) AggregateTypes() []string {
 	return p.aggregateTypes
 }
 
-func (p *mockScopedProjection) BoundedContexts() []string {
+func (p *mockScopedConsumer) BoundedContexts() []string {
 	return p.boundedContexts
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *mockScopedProjection) Handle(_ context.Context, _ *sql.Tx, event es.PersistedEvent) error {
+func (p *mockScopedConsumer) Handle(_ context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	p.receivedEvents = append(p.receivedEvents, event)
 	return nil
 }
 
-func TestScopedProjection_Interface(_ *testing.T) {
-	// Test that mockScopedProjection implements both interfaces
-	var _ Projection = &mockScopedProjection{}
-	var _ ScopedProjection = &mockScopedProjection{}
+func TestScopedConsumer_Interface(_ *testing.T) {
+	// Test that mockScopedConsumer implements both interfaces
+	var _ Consumer = &mockScopedConsumer{}
+	var _ ScopedConsumer = &mockScopedConsumer{}
 
-	// Test that mockGlobalProjection implements only Projection
-	var _ Projection = &mockGlobalProjection{}
+	// Test that mockGlobalConsumer implements only Consumer
+	var _ Consumer = &mockGlobalConsumer{}
 }
 
-func TestScopedProjection_TypeAssertion(t *testing.T) {
-	globalProj := &mockGlobalProjection{name: "global"}
-	scopedProj := &mockScopedProjection{name: "scoped", aggregateTypes: []string{"User"}}
+func TestScopedConsumer_TypeAssertion(t *testing.T) {
+	globalProj := &mockGlobalConsumer{name: "global"}
+	scopedProj := &mockScopedConsumer{name: "scoped", aggregateTypes: []string{"User"}}
 
-	// Global projection should not be a ScopedProjection
-	if _, ok := Projection(globalProj).(ScopedProjection); ok {
-		t.Error("Global projection should not implement ScopedProjection")
+	// Global consumer should not be a ScopedConsumer
+	if _, ok := Consumer(globalProj).(ScopedConsumer); ok {
+		t.Error("Global consumer should not implement ScopedConsumer")
 	}
 
-	// Scoped projection should be a ScopedProjection
-	if _, ok := Projection(scopedProj).(ScopedProjection); !ok {
-		t.Error("Scoped projection should implement ScopedProjection")
+	// Scoped consumer should be a ScopedConsumer
+	if _, ok := Consumer(scopedProj).(ScopedConsumer); !ok {
+		t.Error("Scoped consumer should implement ScopedConsumer")
 	}
 }
 
-func TestScopedProjection_EmptyAggregateTypes(t *testing.T) {
+func TestScopedConsumer_EmptyAggregateTypes(t *testing.T) {
 	// Test that empty aggregate types list is valid
-	scopedProj := &mockScopedProjection{
+	scopedProj := &mockScopedConsumer{
 		name:           "scoped_empty",
 		aggregateTypes: []string{},
 	}

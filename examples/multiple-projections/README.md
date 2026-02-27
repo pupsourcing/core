@@ -97,29 +97,29 @@ fastProjection := &FastProjection{}
 slowProjection := &SlowProjection{}
 
 // Configure processors independently
-var runners []runner.ProjectionRunner
+var runners []runner.ConsumerRunner
 
-config1 := projection.ProcessorConfig{
+config1 := consumer.ProcessorConfig{
     BatchSize:         1000, // Large batches for throughput
     PartitionKey:      0,
     TotalPartitions:   1,
-    PartitionStrategy: projection.HashPartitionStrategy{},
+    PartitionStrategy: consumer.HashPartitionStrategy{},
 }
 processor1 := postgres.NewProcessor(db, store, &config1)
-runners = append(runners, runner.ProjectionRunner{
-    Projection: fastProjection,
+runners = append(runners, runner.ConsumerRunner{
+    Consumer: fastProjection,
     Processor:  processor1,
 })
 
-config2 := projection.ProcessorConfig{
+config2 := consumer.ProcessorConfig{
     BatchSize:         10, // Small batches to avoid blocking
     PartitionKey:      0,
     TotalPartitions:   1,
-    PartitionStrategy: projection.HashPartitionStrategy{},
+    PartitionStrategy: consumer.HashPartitionStrategy{},
 }
 processor2 := postgres.NewProcessor(db, store, &config2)
-runners = append(runners, runner.ProjectionRunner{
-    Projection: slowProjection,
+runners = append(runners, runner.ConsumerRunner{
+    Consumer: slowProjection,
     Processor:  processor2,
 })
 
@@ -135,29 +135,29 @@ err := r.Run(ctx, runners)
 noPartProj := &NoPartitionProjection{}
 partitionedProj := &PartitionedProjection{}
 
-var runners []runner.ProjectionRunner
+var runners []runner.ConsumerRunner
 
-config1 := projection.ProcessorConfig{
+config1 := consumer.ProcessorConfig{
     PartitionKey:      0,
     TotalPartitions:   1, // Single worker
     BatchSize:         100,
-    PartitionStrategy: projection.HashPartitionStrategy{},
+    PartitionStrategy: consumer.HashPartitionStrategy{},
 }
 processor1 := postgres.NewProcessor(db, store, &config1)
-runners = append(runners, runner.ProjectionRunner{
-    Projection: noPartProj,
+runners = append(runners, runner.ConsumerRunner{
+    Consumer: noPartProj,
     Processor:  processor1,
 })
 
-config2 := projection.ProcessorConfig{
+config2 := consumer.ProcessorConfig{
     PartitionKey:      workerID,
     TotalPartitions:   4, // Scaled across 4 workers
     BatchSize:         100,
-    PartitionStrategy: projection.HashPartitionStrategy{},
+    PartitionStrategy: consumer.HashPartitionStrategy{},
 }
 processor2 := postgres.NewProcessor(db, store, &config2)
-runners = append(runners, runner.ProjectionRunner{
-    Projection: partitionedProj,
+runners = append(runners, runner.ConsumerRunner{
+    Consumer: partitionedProj,
     Processor:  processor2,
 })
 

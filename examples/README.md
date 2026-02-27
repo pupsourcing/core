@@ -223,7 +223,7 @@ go run main.go
 Demonstrates how to wire a process-local dispatcher with runner-managed projections and shut down cleanly using a timeout-bound context.
 
 **What you'll learn:**
-- Wiring `projection.NewDispatcher` with projection processors
+- Wiring `consumer.NewDispatcher` with projection processors
 - Passing dispatcher wake signals into runner-managed projection processors
 - Running dispatcher and runner with explicit lifecycle coordination
 - Bounded execution using `context.WithTimeout` (no hanging goroutines)
@@ -427,7 +427,7 @@ SELECT COUNT(*) FROM events;
 
 Check projection checkpoint:
 ```sql
-SELECT * FROM projection_checkpoints;
+SELECT * FROM consumer_checkpoints;
 ```
 
 ## Next Steps

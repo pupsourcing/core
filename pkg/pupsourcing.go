@@ -5,7 +5,7 @@
 //
 //	es           - Core types and interfaces
 //	es/store     - Event store abstractions
-//	es/projection - Projection processing
+//	es/consumer  - Consumer processing
 //	es/adapters/postgres - PostgreSQL implementation
 //	es/migrations - Migration generation
 //
@@ -21,8 +21,8 @@
 //     tx.Commit()
 //
 //  3. Process events:
-//     processor := projection.NewProcessor(db, store, projection.DefaultProcessorConfig())
-//     processor.Run(ctx, myProjection)
+//     processor := consumer.NewProcessor(db, store, consumer.DefaultProcessorConfig())
+//     processor.Run(ctx, myConsumer)
 //
 // See the examples directory for complete working examples.
 package pupsourcing

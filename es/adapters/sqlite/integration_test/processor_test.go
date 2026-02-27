@@ -19,37 +19,37 @@ import (
 
 	"github.com/getpup/pupsourcing/es"
 	"github.com/getpup/pupsourcing/es/adapters/sqlite"
-	"github.com/getpup/pupsourcing/es/projection"
+	"github.com/getpup/pupsourcing/es/consumer"
 	"github.com/google/uuid"
 )
 
-// testProjection is a simple projection for testing
-type testProjection struct {
+// testConsumer is a simple consumer for testing
+type testConsumer struct {
 	name   string
 	events []es.PersistedEvent
 	mu     sync.Mutex
 }
 
-func newTestProjection(name string) *testProjection {
-	return &testProjection{
+func newTestConsumer(name string) *testConsumer {
+	return &testConsumer{
 		name:   name,
 		events: make([]es.PersistedEvent, 0),
 	}
 }
 
-func (p *testProjection) Name() string {
+func (p *testConsumer) Name() string {
 	return p.name
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *testProjection) Handle(ctx context.Context, _ *sql.Tx, event es.PersistedEvent) error {
+func (p *testConsumer) Handle(ctx context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.events = append(p.events, event)
 	return nil
 }
 
-func (p *testProjection) EventCount() int {
+func (p *testConsumer) EventCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return len(p.events)
@@ -89,12 +89,12 @@ func TestProcessor_RunModeOneOff(t *testing.T) {
 	}
 	tx.Commit()
 
-	// Create test projection
-	proj := newTestProjection("test_oneoff")
+	// Create test consumer
+	proj := newTestConsumer("test_oneoff")
 
 	// Configure processor in one-off mode
-	config := projection.DefaultProcessorConfig()
-	config.RunMode = projection.RunModeOneOff
+	config := consumer.DefaultProcessorConfig()
+	config.RunMode = consumer.RunModeOneOff
 	config.BatchSize = 10
 
 	processor := sqlite.NewProcessor(db, store, &config)
@@ -133,12 +133,12 @@ func TestProcessor_RunModeOneOff_EmptyStore(t *testing.T) {
 
 	// No events appended - empty store
 
-	// Create test projection
-	proj := newTestProjection("test_oneoff_empty")
+	// Create test consumer
+	proj := newTestConsumer("test_oneoff_empty")
 
 	// Configure processor in one-off mode
-	config := projection.DefaultProcessorConfig()
-	config.RunMode = projection.RunModeOneOff
+	config := consumer.DefaultProcessorConfig()
+	config.RunMode = consumer.RunModeOneOff
 
 	processor := sqlite.NewProcessor(db, store, &config)
 
@@ -188,12 +188,12 @@ func TestProcessor_RunModeOneOff_PartialBatch(t *testing.T) {
 	}
 	tx.Commit()
 
-	// Create test projection
-	proj := newTestProjection("test_oneoff_partial")
+	// Create test consumer
+	proj := newTestConsumer("test_oneoff_partial")
 
 	// Configure processor in one-off mode with batch size larger than events
-	config := projection.DefaultProcessorConfig()
-	config.RunMode = projection.RunModeOneOff
+	config := consumer.DefaultProcessorConfig()
+	config.RunMode = consumer.RunModeOneOff
 	config.BatchSize = 100
 
 	processor := sqlite.NewProcessor(db, store, &config)
@@ -242,11 +242,11 @@ func TestProcessor_RunModeContinuous_StillWorks(t *testing.T) {
 	}
 	tx.Commit()
 
-	// Create test projection
-	proj := newTestProjection("test_continuous")
+	// Create test consumer
+	proj := newTestConsumer("test_continuous")
 
 	// Configure processor in continuous mode (default)
-	config := projection.DefaultProcessorConfig()
+	config := consumer.DefaultProcessorConfig()
 	// RunMode defaults to RunModeContinuous
 
 	processor := sqlite.NewProcessor(db, store, &config)

@@ -1,5 +1,5 @@
-// Package projection provides projection processing capabilities.
-package projection
+// Package consumer provides event consumer processing capabilities.
+package consumer
 
 import (
 	"context"
@@ -10,27 +10,27 @@ import (
 	"github.com/getpup/pupsourcing/es"
 )
 
-// Projection defines the interface for event projection handlers.
-// Projections are storage-agnostic and can write to any destination
+// Consumer defines the interface for event consumer handlers.
+// Consumers are storage-agnostic and can write to any destination
 // (SQL databases, NoSQL stores, message brokers, search engines, etc.).
-type Projection interface {
-	// Name returns the unique name of this projection.
+type Consumer interface {
+	// Name returns the unique name of this consumer.
 	// This name is used for checkpoint tracking.
 	Name() string
 
 	// Handle processes a single event.
-	// Return an error to stop projection processing.
+	// Return an error to stop consumer processing.
 	//
 	// The tx parameter is the processor's transaction used for checkpoint management.
-	// SQL projections can use this transaction to ensure atomic updates of both
+	// SQL consumers can use this transaction to ensure atomic updates of both
 	// the read model and the checkpoint. This eliminates inconsistencies where
-	// a projection succeeds but the checkpoint update fails (or vice versa).
+	// a consumer succeeds but the checkpoint update fails (or vice versa).
 	//
 	// The transaction will be committed by the processor after Handle returns successfully.
-	// Projections should NEVER call Commit() or Rollback() on the provided transaction.
+	// Consumers should NEVER call Commit() or Rollback() on the provided transaction.
 	//
-	// For non-SQL projections (Elasticsearch, Redis, message brokers), the tx parameter
-	// should be ignored and projections should manage their own connections as before.
+	// For non-SQL consumers (Elasticsearch, Redis, message brokers), the tx parameter
+	// should be ignored and consumers should manage their own connections as before.
 	//
 	// Event is passed by value to enforce immutability (events are value objects).
 	// Large data (Payload, Metadata byte slices) share references to their backing arrays,
@@ -40,53 +40,53 @@ type Projection interface {
 	Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error
 }
 
-// ScopedProjection is an optional interface that projections can implement to filter
-// events by aggregate type and/or bounded context. This is useful for read model projections
+// ScopedConsumer is an optional interface that consumers can implement to filter
+// events by aggregate type and/or bounded context. This is useful for read model consumers
 // that only care about specific aggregate types within specific bounded contexts.
 //
-// By default, projections implementing only the Projection interface receive all events.
-// This ensures that global projections (e.g., integration publishers, audit logs) continue
+// By default, consumers implementing only the Consumer interface receive all events.
+// This ensures that global consumers (e.g., integration publishers, audit logs) continue
 // to work without modification.
 //
-// Example - Read model projection scoped to User aggregate in Identity context:
+// Example - Read model consumer scoped to User aggregate in Identity context:
 //
-// type UserReadModelProjection struct {}
+// type UserReadModelConsumer struct {}
 //
-//	func (p *UserReadModelProjection) Name() string {
+//	func (p *UserReadModelConsumer) Name() string {
 //	   return "user_read_model"
 //	}
 //
-//	func (p *UserReadModelProjection) AggregateTypes() []string {
+//	func (p *UserReadModelConsumer) AggregateTypes() []string {
 //	   return []string{"User"}
 //	}
 //
-//	func (p *UserReadModelProjection) BoundedContexts() []string {
+//	func (p *UserReadModelConsumer) BoundedContexts() []string {
 //	   return []string{"Identity"}
 //	}
 //
-//	func (p *UserReadModelProjection) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
+//	func (p *UserReadModelConsumer) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
 //	   // Only receives User aggregate events from Identity bounded context
 //	   // Use tx for atomic read model updates with checkpoint
 //	   return nil
 //	}
 //
-// Example - Read model projection scoped to multiple contexts:
+// Example - Read model consumer scoped to multiple contexts:
 //
-// type OrderRevenueProjection struct {}
+// type OrderRevenueConsumer struct {}
 //
-//	func (p *OrderRevenueProjection) Name() string {
+//	func (p *OrderRevenueConsumer) Name() string {
 //	   return "order_revenue"
 //	}
 //
-//	func (p *OrderRevenueProjection) AggregateTypes() []string {
+//	func (p *OrderRevenueConsumer) AggregateTypes() []string {
 //	   return []string{"Order"}
 //	}
 //
-//	func (p *OrderRevenueProjection) BoundedContexts() []string {
+//	func (p *OrderRevenueConsumer) BoundedContexts() []string {
 //	   return []string{"Sales", "Billing"}
 //	}
 //
-//	func (p *OrderRevenueProjection) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
+//	func (p *OrderRevenueConsumer) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
 //	   // Receives Order events from both Sales and Billing contexts
 //	   return nil
 //	}
@@ -105,25 +105,25 @@ type Projection interface {
 //	   _ = tx
 //	   return nil
 //	}
-type ScopedProjection interface {
-	Projection
-	// AggregateTypes returns the list of aggregate types this projection cares about.
-	// If empty, the projection receives events from all aggregate types (still filtered by BoundedContexts if specified).
+type ScopedConsumer interface {
+	Consumer
+	// AggregateTypes returns the list of aggregate types this consumer cares about.
+	// If empty, the consumer receives events from all aggregate types (still filtered by BoundedContexts if specified).
 	// If non-empty, only events matching one of these aggregate types are passed to Handle.
 	AggregateTypes() []string
 
-	// BoundedContexts returns the list of bounded contexts this projection cares about.
-	// If empty, the projection receives events from all bounded contexts (still filtered by AggregateTypes if specified).
+	// BoundedContexts returns the list of bounded contexts this consumer cares about.
+	// If empty, the consumer receives events from all bounded contexts (still filtered by AggregateTypes if specified).
 	// If non-empty, only events matching one of these bounded contexts are passed to Handle.
 	BoundedContexts() []string
 }
 
-// PartitionStrategy defines how events are partitioned across projection instances.
+// PartitionStrategy defines how events are partitioned across consumer instances.
 type PartitionStrategy interface {
-	// ShouldProcess returns true if this projection instance should process the given event.
+	// ShouldProcess returns true if this consumer instance should process the given event.
 	// aggregateID is the aggregate ID of the event.
-	// partitionKey identifies this projection instance (e.g., "0" for first of 4 workers).
-	// totalPartitions is the total number of projection instances.
+	// partitionKey identifies this consumer instance (e.g., "0" for first of 4 workers).
+	// totalPartitions is the total number of consumer instances.
 	ShouldProcess(aggregateID string, partitionKey int, totalPartitions int) bool
 }
 
@@ -134,7 +134,7 @@ type PartitionStrategy interface {
 // - Even distribution across partitions
 // - Deterministic assignment (same aggregate always goes to same partition)
 //
-// This strategy enables horizontal scaling of projection processing while
+// This strategy enables horizontal scaling of consumer processing while
 // maintaining ordering guarantees within each aggregate.
 type HashPartitionStrategy struct{}
 
@@ -160,22 +160,22 @@ const (
 
 	// RunModeOneOff processes all available events and exits cleanly.
 	// This mode is useful for:
-	// - Integration tests that need synchronous projection processing
+	// - Integration tests that need synchronous consumer processing
 	// - One-time catch-up operations
-	// - Backfilling projections
+	// - Backfilling consumers
 	RunModeOneOff
 )
 
-// WakeupSource provides best-effort wake signals to projection processors.
+// WakeupSource provides best-effort wake signals to consumer processors.
 // Signals are intentionally lossy/coalesced and should only be used as an
 // optimization hint. Correctness must always rely on checkpoint-based pulling.
 type WakeupSource interface {
-	// Subscribe registers a projection processor for wake signals.
+	// Subscribe registers a consumer processor for wake signals.
 	// Returns a receive-only signal channel and an unsubscribe function.
 	Subscribe() (signals <-chan struct{}, unsubscribe func())
 }
 
-// ProcessorConfig configures a projection processor.
+// ProcessorConfig configures a consumer processor.
 type ProcessorConfig struct {
 	// PartitionStrategy determines which events this processor handles
 	PartitionStrategy PartitionStrategy
@@ -204,7 +204,7 @@ type ProcessorConfig struct {
 	MaxPollInterval time.Duration
 
 	// WakeupJitter is the random delay applied after receiving a wake signal.
-	// This helps smooth spikes when many projections wake at once.
+	// This helps smooth spikes when many consumers wake at once.
 	// Default is 25ms.
 	WakeupJitter time.Duration
 
@@ -240,10 +240,10 @@ func DefaultProcessorConfig() ProcessorConfig {
 }
 
 // ProcessorRunner is the interface that adapter-specific processors must implement.
-// This allows the Runner to orchestrate projections regardless of the underlying
+// This allows the Runner to orchestrate consumers regardless of the underlying
 // storage implementation (SQL, NoSQL, message brokers, etc.).
 type ProcessorRunner interface {
-	// Run processes events for the given projection until the context is canceled.
-	// Returns an error if the projection handler fails.
-	Run(ctx context.Context, projection Projection) error
+	// Run processes events for the given consumer until the context is canceled.
+	// Returns an error if the consumer handler fails.
+	Run(ctx context.Context, consumer Consumer) error
 }

@@ -8,38 +8,38 @@ import (
 	"testing"
 
 	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/projection"
+	"github.com/getpup/pupsourcing/es/consumer"
 )
 
-// mockProjection implements projection.Projection for testing
-type mockProjection struct {
+// mockConsumer implements consumer.Consumer for testing
+type mockConsumer struct {
 	name        string
 	handleCount int32
 	shouldFail  bool
 }
 
-func (m *mockProjection) Name() string {
+func (m *mockConsumer) Name() string {
 	return m.name
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (m *mockProjection) Handle(_ context.Context, _ *sql.Tx, _ es.PersistedEvent) error {
+func (m *mockConsumer) Handle(_ context.Context, _ *sql.Tx, _ es.PersistedEvent) error {
 	atomic.AddInt32(&m.handleCount, 1)
 
 	if m.shouldFail {
-		return errors.New("mock projection error")
+		return errors.New("mock consumer error")
 	}
 	return nil
 }
 
-// mockProcessor implements projection.ProcessorRunner for testing
+// mockProcessor implements consumer.ProcessorRunner for testing
 type mockProcessor struct {
 	projName   string
 	runCalled  bool
 	shouldFail bool
 }
 
-func (m *mockProcessor) Run(_ context.Context, proj projection.Projection) error {
+func (m *mockProcessor) Run(_ context.Context, proj consumer.Consumer) error {
 	m.runCalled = true
 	m.projName = proj.Name()
 
@@ -49,38 +49,38 @@ func (m *mockProcessor) Run(_ context.Context, proj projection.Projection) error
 	return nil
 }
 
-func TestRunner_Run_NoProjections(t *testing.T) {
+func TestRunner_Run_NoConsumers(t *testing.T) {
 	runner := New()
 
-	err := runner.Run(context.Background(), []ProjectionRunner{})
-	if !errors.Is(err, ErrNoProjections) {
-		t.Errorf("Expected ErrNoProjections, got %v", err)
+	err := runner.Run(context.Background(), []ConsumerRunner{})
+	if !errors.Is(err, ErrNoConsumers) {
+		t.Errorf("Expected ErrNoConsumers, got %v", err)
 	}
 }
 
-func TestRunner_Run_NilProjection(t *testing.T) {
+func TestRunner_Run_NilConsumer(t *testing.T) {
 	runner := New()
 
-	runners := []ProjectionRunner{
+	runners := []ConsumerRunner{
 		{
-			Projection: nil,
-			Processor:  &mockProcessor{},
+			Consumer:  nil,
+			Processor: &mockProcessor{},
 		},
 	}
 
 	err := runner.Run(context.Background(), runners)
-	if err == nil || err.Error() != "projection at index 0 is nil" {
-		t.Errorf("Expected nil projection error, got %v", err)
+	if err == nil || err.Error() != "consumer at index 0 is nil" {
+		t.Errorf("Expected nil consumer error, got %v", err)
 	}
 }
 
 func TestRunner_Run_NilProcessor(t *testing.T) {
 	runner := New()
 
-	runners := []ProjectionRunner{
+	runners := []ConsumerRunner{
 		{
-			Projection: &mockProjection{name: "test"},
-			Processor:  nil,
+			Consumer:  &mockConsumer{name: "test"},
+			Processor: nil,
 		},
 	}
 
@@ -96,10 +96,10 @@ func TestRunner_Run_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	runners := []ProjectionRunner{
+	runners := []ConsumerRunner{
 		{
-			Projection: &mockProjection{name: "test"},
-			Processor:  &mockProcessor{},
+			Consumer:  &mockConsumer{name: "test"},
+			Processor: &mockProcessor{},
 		},
 	}
 

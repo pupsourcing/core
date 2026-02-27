@@ -19,7 +19,7 @@ type Config struct {
 	// EventsTable is the name of the events table
 	EventsTable string
 
-	// CheckpointsTable is the name of the projection checkpoints table
+	// CheckpointsTable is the name of the consumer checkpoints table
 	CheckpointsTable string
 
 	// AggregateHeadsTable is the name of the aggregate version tracking table
@@ -33,7 +33,7 @@ func DefaultConfig() Config {
 		OutputFolder:        "migrations",
 		OutputFilename:      fmt.Sprintf("%s_init_event_sourcing.sql", timestamp),
 		EventsTable:         "events",
-		CheckpointsTable:    "projection_checkpoints",
+		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
 	}
 }
@@ -109,9 +109,9 @@ CREATE TABLE IF NOT EXISTS %s (
 CREATE INDEX IF NOT EXISTS idx_%s_updated 
     ON %s (updated_at);
 
--- Projection checkpoints table tracks progress of each projection
+-- Consumer checkpoints table tracks progress of each consumer
 CREATE TABLE IF NOT EXISTS %s (
-    projection_name TEXT PRIMARY KEY,
+    consumer_name TEXT PRIMARY KEY,
     last_global_position BIGINT NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -203,9 +203,9 @@ CREATE TABLE IF NOT EXISTS %s (
 CREATE INDEX IF NOT EXISTS idx_%s_updated 
     ON %s (updated_at);
 
--- Projection checkpoints table tracks progress of each projection
+-- Consumer checkpoints table tracks progress of each consumer
 CREATE TABLE IF NOT EXISTS %s (
-    projection_name TEXT PRIMARY KEY,
+    consumer_name TEXT PRIMARY KEY,
     last_global_position INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -297,9 +297,9 @@ CREATE TABLE IF NOT EXISTS %s (
 CREATE INDEX idx_%s_updated 
     ON %s (updated_at);
 
--- Projection checkpoints table tracks progress of each projection
+-- Consumer checkpoints table tracks progress of each consumer
 CREATE TABLE IF NOT EXISTS %s (
-    projection_name VARCHAR(255) PRIMARY KEY,
+    consumer_name VARCHAR(255) PRIMARY KEY,
     last_global_position BIGINT NOT NULL DEFAULT 0,
     updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

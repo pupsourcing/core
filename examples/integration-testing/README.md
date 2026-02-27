@@ -16,8 +16,8 @@ In production, projections run continuously (`RunModeContinuous`), polling for n
 Use `RunModeOneOff` to process projections synchronously in tests:
 
 ```go
-config := projection.DefaultProcessorConfig()
-config.RunMode = projection.RunModeOneOff  // Exit after catching up
+config := consumer.DefaultProcessorConfig()
+config.RunMode = consumer.RunModeOneOff  // Exit after catching up
 
 processor := postgres.NewProcessor(db, store, &config)
 

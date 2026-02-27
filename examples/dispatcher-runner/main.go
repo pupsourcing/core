@@ -16,9 +16,9 @@ import (
 
 	"github.com/getpup/pupsourcing/es"
 	"github.com/getpup/pupsourcing/es/adapters/sqlite"
+	"github.com/getpup/pupsourcing/es/consumer"
+	"github.com/getpup/pupsourcing/es/consumer/runner"
 	"github.com/getpup/pupsourcing/es/migrations"
-	"github.com/getpup/pupsourcing/es/projection"
-	"github.com/getpup/pupsourcing/es/projection/runner"
 )
 
 type countingProjection struct {
@@ -79,16 +79,16 @@ func run(timeout time.Duration) error {
 		eventType: "UserCreated",
 	}
 
-	dispatcher := projection.NewDispatcher(db, store, nil)
+	dispatcher := consumer.NewDispatcher(db, store, nil)
 
-	config1 := projection.DefaultProcessorConfig()
+	config1 := consumer.DefaultProcessorConfig()
 	config1.WakeupSource = dispatcher
 	config1.PollInterval = 250 * time.Millisecond
 
-	runners := []runner.ProjectionRunner{
+	runners := []runner.ConsumerRunner{
 		{
-			Projection: userProjection,
-			Processor:  sqlite.NewProcessor(db, store, &config1),
+			Consumer:  userProjection,
+			Processor: sqlite.NewProcessor(db, store, &config1),
 		},
 	}
 
@@ -162,7 +162,7 @@ func setupDatabase() (*sql.DB, func(), error) {
 		OutputFolder:        tmpDir,
 		OutputFilename:      "init.sql",
 		EventsTable:         "events",
-		CheckpointsTable:    "projection_checkpoints",
+		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
 	}
 

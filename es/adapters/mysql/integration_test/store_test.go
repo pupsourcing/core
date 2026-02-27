@@ -77,9 +77,9 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 
 	// Drop existing objects to ensure clean state
 	// MySQL requires separate Exec calls for each statement
-	_, err := db.Exec(`DROP TABLE IF EXISTS projection_checkpoints`)
+	_, err := db.Exec(`DROP TABLE IF EXISTS consumer_checkpoints`)
 	if err != nil {
-		t.Fatalf("Failed to drop projection_checkpoints table: %v", err)
+		t.Fatalf("Failed to drop consumer_checkpoints table: %v", err)
 	}
 	_, err = db.Exec(`DROP TABLE IF EXISTS aggregate_heads`)
 	if err != nil {
@@ -96,7 +96,7 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 		OutputFolder:        tmpDir,
 		OutputFilename:      "test.sql",
 		EventsTable:         "events",
-		CheckpointsTable:    "projection_checkpoints",
+		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
 	}
 

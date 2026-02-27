@@ -20,8 +20,8 @@ pupsourcing provides minimal, reliable infrastructure for event sourcing in Go a
 - **Multiple Database Adapters** - PostgreSQL, SQLite, and MySQL/MariaDB
 - **Bounded Context Support** - Events are scoped to bounded contexts for domain-driven design alignment
 - **Optimistic Concurrency** - Automatic conflict detection via database constraints
-- **Projection System** - Pull-based event processing with checkpoints, supporting both global and context-scoped projections
-- **Horizontal Scaling** - Hash-based partitioning for projection workers
+- **Consumer System** - Pull-based event processing with checkpoints, supporting both global and context-scoped consumers
+- **Horizontal Scaling** - Hash-based partitioning for consumer workers
 - **Code Generation** - Optional tool for strongly-typed domain event mapping
 - **Minimal Dependencies** - Go standard library plus database driver
 
@@ -128,12 +128,12 @@ for _, event := range stream.Events {
 }
 ```
 
-### 5. Run Projections
+### 5. Run Consumers
 
-Projections transform events into query-optimized read models. Use **scoped projections** for read models that only care about specific aggregate types and/or bounded contexts, or **global projections** for integration publishers that need all events.
+Consumers process events from the event store. Use **scoped consumers** for read models that only care about specific aggregate types and/or bounded contexts, or **global consumers** for integration publishers that need all events.
 
 ```go
-import "github.com/getpup/pupsourcing/es/projection"
+import "github.com/getpup/pupsourcing/es/consumer"
 
 // Scoped projection - only receives User aggregate events from Identity context
 type UserReadModelProjection struct{}
@@ -161,37 +161,37 @@ func (p *UserReadModelProjection) Handle(ctx context.Context, tx *sql.Tx, event 
 
 // Run projection with adapter-specific processor
 store := postgres.NewStore(postgres.DefaultStoreConfig())
-config := projection.DefaultProcessorConfig()
+config := consumer.DefaultProcessorConfig()
 processor := postgres.NewProcessor(db, store, &config)
 err := processor.Run(ctx, &UserReadModelProjection{})
 ```
 
-Optional optimization for many projections in one process (best-effort wake signals with explicit lifecycle):
+Optional optimization for many consumers in one process (best-effort wake signals with explicit lifecycle):
 
 ```go
 runCtx, cancel := context.WithCancel(ctx)
 defer cancel()
 
-dispatcher := projection.NewDispatcher(db, store, nil) // uses DefaultDispatcherConfig
+dispatcher := consumer.NewDispatcher(db, store, nil) // uses DefaultDispatcherConfig
 dispatcherErrCh := make(chan error, 1)
 go func() {
     dispatcherErrCh <- dispatcher.Run(runCtx)
 }()
 
-projectionsSlice := []projection.Projection{
+consumersSlice := []consumer.Consumer{
     &UserReadModelProjection{},
-    &AnotherProjection{},
+    &AnotherConsumer{},
 }
 
-runners := make([]runner.ProjectionRunner, len(projectionsSlice))
-for i, proj := range projectionsSlice {
-    cfg := projection.DefaultProcessorConfig()
+runners := make([]runner.ConsumerRunner, len(consumersSlice))
+for i, c := range consumersSlice {
+    cfg := consumer.DefaultProcessorConfig()
     cfg.WakeupSource = dispatcher // correctness still relies on checkpoints + fallback polling
     cfg.PollInterval = 500 * time.Millisecond
     cfg.MaxPollInterval = 8 * time.Second
 
-    runners[i] = runner.ProjectionRunner{
-        Projection: proj,
+    runners[i] = runner.ConsumerRunner{
+        Consumer: c,
         Processor:  postgres.NewProcessor(db, store, &cfg),
     }
 }
@@ -206,7 +206,7 @@ if runErr != nil && !errors.Is(runErr, context.Canceled) {
 if dispatcherErr != nil &&
     !errors.Is(dispatcherErr, context.Canceled) &&
     !errors.Is(dispatcherErr, context.DeadlineExceeded) {
-    // Optional: log warning; projections remain correct via fallback polling.
+    // Optional: log warning; consumers remain correct via fallback polling.
 }
 ```
 
@@ -219,7 +219,7 @@ Comprehensive documentation is available at **[https://pupsourcing.gopup.dev](ht
 - **[Getting Started](https://pupsourcing.gopup.dev/getting-started)** - Installation, setup, and first steps
 - **[Core Concepts](https://pupsourcing.gopup.dev/core-concepts)** - Understanding event sourcing principles
 - **[Database Adapters](https://pupsourcing.gopup.dev/adapters)** - Choosing the right database
-- **[Projections & Scaling](https://pupsourcing.gopup.dev/scaling)** - Horizontal scaling and production patterns
+- **[Consumers & Scaling](https://pupsourcing.gopup.dev/scaling)** - Horizontal scaling and production patterns
 - **[Event Mapping Code Generation](https://pupsourcing.gopup.dev/eventmap-gen)** - Type-safe domain event mapping
 - **[Observability](https://pupsourcing.gopup.dev/observability)** - Logging, tracing, and monitoring
 - **[API Reference](https://pupsourcing.gopup.dev/api-reference)** - Complete API documentation
@@ -228,8 +228,8 @@ Comprehensive documentation is available at **[https://pupsourcing.gopup.dev](ht
 
 Complete runnable examples are available in the [`examples/`](./examples) directory:
 
-- **[Single Worker](./examples/single-worker/)** - Basic projection pattern
-- **[Multiple Projections](./examples/multiple-projections/)** - Running different projections concurrently
+- **[Single Worker](./examples/single-worker/)** - Basic consumer pattern
+- **[Multiple Consumers](./examples/multiple-projections/)** - Running different consumers concurrently
 - **[Dispatcher + Runner](./examples/dispatcher-runner/)** - Safe dispatcher lifecycle with wakeup optimization
 - **[Worker Pool](./examples/worker-pool/)** - Multiple workers in the same process
 - **[Partitioned](./examples/partitioned/)** - Horizontal scaling across processes

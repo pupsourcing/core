@@ -8,25 +8,25 @@ import (
 	"time"
 
 	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/projection"
+	"github.com/getpup/pupsourcing/es/consumer"
 )
 
 var (
-	// ErrProjectionStopped indicates the projection was stopped due to an error.
-	ErrProjectionStopped = errors.New("projection stopped")
+	// ErrConsumerStopped indicates the consumer was stopped due to an error.
+	ErrConsumerStopped = errors.New("consumer stopped")
 )
 
-// Processor processes events for projections using PostgreSQL for checkpointing.
+// Processor processes events for consumers using PostgreSQL for checkpointing.
 // This is the PostgreSQL-specific implementation that manages transactions internally.
 type Processor struct {
 	db     *sql.DB
 	store  *Store
-	config *projection.ProcessorConfig
+	config *consumer.ProcessorConfig
 }
 
-// NewProcessor creates a new PostgreSQL projection processor.
+// NewProcessor creates a new PostgreSQL consumer processor.
 // The processor manages SQL transactions internally and coordinates checkpointing with event processing.
-func NewProcessor(db *sql.DB, store *Store, config *projection.ProcessorConfig) *Processor {
+func NewProcessor(db *sql.DB, store *Store, config *consumer.ProcessorConfig) *Processor {
 	return &Processor{
 		db:     db,
 		store:  store,
@@ -37,20 +37,20 @@ func NewProcessor(db *sql.DB, store *Store, config *projection.ProcessorConfig) 
 // checkpointName returns the checkpoint name for this processor.
 // When partitioning is enabled (TotalPartitions > 1), it appends the partition key to ensure
 // each partition tracks its checkpoint independently.
-func (p *Processor) checkpointName(projectionName string) string {
+func (p *Processor) checkpointName(consumerName string) string {
 	if p.config.TotalPartitions > 1 {
-		return fmt.Sprintf("%s_p%d", projectionName, p.config.PartitionKey)
+		return fmt.Sprintf("%s_p%d", consumerName, p.config.PartitionKey)
 	}
-	return projectionName
+	return consumerName
 }
 
-// Run processes events for the given projection until the context is canceled.
+// Run processes events for the given consumer until the context is canceled.
 // It reads events in batches, applies partition and aggregate type filters, and updates checkpoints.
-// Returns an error if the projection handler fails.
-func (p *Processor) Run(ctx context.Context, proj projection.Projection) error {
+// Returns an error if the consumer handler fails.
+func (p *Processor) Run(ctx context.Context, proj consumer.Consumer) error {
 	if p.config.Logger != nil {
-		p.config.Logger.Info(ctx, "projection processor starting",
-			"projection", proj.Name(),
+		p.config.Logger.Info(ctx, "consumer processor starting",
+			"consumer", proj.Name(),
 			"partition_key", p.config.PartitionKey,
 			"total_partitions", p.config.TotalPartitions,
 			"batch_size", p.config.BatchSize)
@@ -65,7 +65,7 @@ func (p *Processor) Run(ctx context.Context, proj projection.Projection) error {
 
 	idleDelay := p.config.PollInterval
 
-	// Build aggregate type and bounded context filters once for the projection (not per batch)
+	// Build aggregate type and bounded context filters once for the consumer (not per batch)
 	aggregateTypeFilter := buildAggregateTypeFilter(proj)
 	boundedContextFilter := buildBoundedContextFilter(proj)
 
@@ -73,8 +73,8 @@ func (p *Processor) Run(ctx context.Context, proj projection.Projection) error {
 		select {
 		case <-ctx.Done():
 			if p.config.Logger != nil {
-				p.config.Logger.Info(ctx, "projection processor stopped",
-					"projection", proj.Name(),
+				p.config.Logger.Info(ctx, "consumer processor stopped",
+					"consumer", proj.Name(),
 					"reason", ctx.Err())
 			}
 			return ctx.Err()
@@ -98,29 +98,29 @@ func (p *Processor) Run(ctx context.Context, proj projection.Projection) error {
 				continue
 			}
 			if p.config.Logger != nil {
-				p.config.Logger.Error(ctx, "projection processor error",
-					"projection", proj.Name(),
+				p.config.Logger.Error(ctx, "consumer processor error",
+					"consumer", proj.Name(),
 					"error", err)
 			}
-			return fmt.Errorf("%w: %v", ErrProjectionStopped, err)
+			return fmt.Errorf("%w: %v", ErrConsumerStopped, err)
 		}
 
 		idleDelay = p.resetIdleDelay(ctx, proj, idleDelay)
 	}
 }
 
-func (p *Processor) handleIdleCycle(ctx context.Context, proj projection.Projection, wakeupCh <-chan struct{}, idleDelay time.Duration) (time.Duration, bool, error) {
-	if p.config.RunMode == projection.RunModeOneOff {
+func (p *Processor) handleIdleCycle(ctx context.Context, proj consumer.Consumer, wakeupCh <-chan struct{}, idleDelay time.Duration) (time.Duration, bool, error) {
+	if p.config.RunMode == consumer.RunModeOneOff {
 		if p.config.Logger != nil {
-			p.config.Logger.Info(ctx, "projection processor caught up (one-off mode)",
-				"projection", proj.Name())
+			p.config.Logger.Info(ctx, "consumer processor caught up (one-off mode)",
+				"consumer", proj.Name())
 		}
 		return idleDelay, true, nil
 	}
 
 	if p.config.Logger != nil {
-		p.config.Logger.Debug(ctx, "projection idle polling",
-			"projection", proj.Name(),
+		p.config.Logger.Debug(ctx, "consumer idle polling",
+			"consumer", proj.Name(),
 			"partition_key", p.config.PartitionKey,
 			"total_partitions", p.config.TotalPartitions,
 			"idle_delay", idleDelay,
@@ -140,8 +140,8 @@ func (p *Processor) handleIdleCycle(ctx context.Context, proj projection.Project
 	}
 
 	if p.config.Logger != nil {
-		p.config.Logger.Debug(ctx, "projection idle wait completed",
-			"projection", proj.Name(),
+		p.config.Logger.Debug(ctx, "consumer idle wait completed",
+			"consumer", proj.Name(),
 			"partition_key", p.config.PartitionKey,
 			"total_partitions", p.config.TotalPartitions,
 			"wait_reason", waitReason,
@@ -153,10 +153,10 @@ func (p *Processor) handleIdleCycle(ctx context.Context, proj projection.Project
 	return nextIdleDelay, false, nil
 }
 
-func (p *Processor) resetIdleDelay(ctx context.Context, proj projection.Projection, currentDelay time.Duration) time.Duration {
+func (p *Processor) resetIdleDelay(ctx context.Context, proj consumer.Consumer, currentDelay time.Duration) time.Duration {
 	if currentDelay != p.config.PollInterval && p.config.Logger != nil {
-		p.config.Logger.Debug(ctx, "projection idle backoff reset",
-			"projection", proj.Name(),
+		p.config.Logger.Debug(ctx, "consumer idle backoff reset",
+			"consumer", proj.Name(),
 			"partition_key", p.config.PartitionKey,
 			"total_partitions", p.config.TotalPartitions,
 			"previous_idle_delay", currentDelay,
@@ -166,10 +166,10 @@ func (p *Processor) resetIdleDelay(ctx context.Context, proj projection.Projecti
 	return p.config.PollInterval
 }
 
-func (p *Processor) waitForNextBatch(ctx context.Context, projectionName string, wakeupCh <-chan struct{}, delay time.Duration) (bool, error) {
+func (p *Processor) waitForNextBatch(ctx context.Context, consumerName string, wakeupCh <-chan struct{}, delay time.Duration) (bool, error) {
 	if p.config.Logger != nil {
-		p.config.Logger.Debug(ctx, "projection idle wait starting",
-			"projection", projectionName,
+		p.config.Logger.Debug(ctx, "consumer idle wait starting",
+			"consumer", consumerName,
 			"partition_key", p.config.PartitionKey,
 			"total_partitions", p.config.TotalPartitions,
 			"idle_delay", delay,
@@ -179,8 +179,8 @@ func (p *Processor) waitForNextBatch(ctx context.Context, projectionName string,
 	if wakeupCh == nil {
 		if delay <= 0 {
 			if p.config.Logger != nil {
-				p.config.Logger.Debug(ctx, "projection idle wait skipped",
-					"projection", projectionName,
+				p.config.Logger.Debug(ctx, "consumer idle wait skipped",
+					"consumer", consumerName,
 					"partition_key", p.config.PartitionKey,
 					"total_partitions", p.config.TotalPartitions,
 					"reason", "busy_poll_no_delay")
@@ -201,7 +201,7 @@ func (p *Processor) waitForNextBatch(ctx context.Context, projectionName string,
 		case <-ctx.Done():
 			return false, ctx.Err()
 		case <-wakeupCh:
-			return true, p.applyWakeupJitter(ctx, projectionName)
+			return true, p.applyWakeupJitter(ctx, consumerName)
 		}
 	}
 
@@ -212,17 +212,17 @@ func (p *Processor) waitForNextBatch(ctx context.Context, projectionName string,
 	case <-ctx.Done():
 		return false, ctx.Err()
 	case <-wakeupCh:
-		return true, p.applyWakeupJitter(ctx, projectionName)
+		return true, p.applyWakeupJitter(ctx, consumerName)
 	case <-timer.C:
 		return false, nil
 	}
 }
 
-func (p *Processor) applyWakeupJitter(ctx context.Context, projectionName string) error {
+func (p *Processor) applyWakeupJitter(ctx context.Context, consumerName string) error {
 	if p.config.WakeupJitter <= 0 {
 		if p.config.Logger != nil {
-			p.config.Logger.Debug(ctx, "projection wakeup jitter skipped",
-				"projection", projectionName,
+			p.config.Logger.Debug(ctx, "consumer wakeup jitter skipped",
+				"consumer", consumerName,
 				"partition_key", p.config.PartitionKey,
 				"total_partitions", p.config.TotalPartitions,
 				"reason", "jitter_disabled")
@@ -233,8 +233,8 @@ func (p *Processor) applyWakeupJitter(ctx context.Context, projectionName string
 	jitter := time.Duration((time.Now().UnixNano() + int64(p.config.PartitionKey+1)) % int64(p.config.WakeupJitter))
 	if jitter <= 0 {
 		if p.config.Logger != nil {
-			p.config.Logger.Debug(ctx, "projection wakeup jitter skipped",
-				"projection", projectionName,
+			p.config.Logger.Debug(ctx, "consumer wakeup jitter skipped",
+				"consumer", consumerName,
 				"partition_key", p.config.PartitionKey,
 				"total_partitions", p.config.TotalPartitions,
 				"reason", "computed_zero_jitter")
@@ -243,8 +243,8 @@ func (p *Processor) applyWakeupJitter(ctx context.Context, projectionName string
 	}
 
 	if p.config.Logger != nil {
-		p.config.Logger.Debug(ctx, "projection wakeup jitter waiting",
-			"projection", projectionName,
+		p.config.Logger.Debug(ctx, "consumer wakeup jitter waiting",
+			"consumer", consumerName,
 			"partition_key", p.config.PartitionKey,
 			"total_partitions", p.config.TotalPartitions,
 			"jitter_delay", jitter)
@@ -288,10 +288,10 @@ func (p *Processor) nextPollDelay(current time.Duration) time.Duration {
 	return next
 }
 
-// buildAggregateTypeFilter builds a filter map for scoped projections.
-// Returns nil if the projection is not scoped or has an empty aggregate types list.
-func buildAggregateTypeFilter(proj projection.Projection) map[string]bool {
-	scopedProj, ok := proj.(projection.ScopedProjection)
+// buildAggregateTypeFilter builds a filter map for scoped consumers.
+// Returns nil if the consumer is not scoped or has an empty aggregate types list.
+func buildAggregateTypeFilter(proj consumer.Consumer) map[string]bool {
+	scopedProj, ok := proj.(consumer.ScopedConsumer)
 	if !ok {
 		return nil
 	}
@@ -308,10 +308,10 @@ func buildAggregateTypeFilter(proj projection.Projection) map[string]bool {
 	return filter
 }
 
-// buildBoundedContextFilter builds a filter map for scoped projections with bounded contexts.
-// Returns nil if the projection is not scoped or has an empty bounded contexts list.
-func buildBoundedContextFilter(proj projection.Projection) map[string]bool {
-	scopedProj, ok := proj.(projection.ScopedProjection)
+// buildBoundedContextFilter builds a filter map for scoped consumers with bounded contexts.
+// Returns nil if the consumer is not scoped or has an empty bounded contexts list.
+func buildBoundedContextFilter(proj consumer.Consumer) map[string]bool {
+	scopedProj, ok := proj.(consumer.ScopedConsumer)
 	if !ok {
 		return nil
 	}
@@ -341,12 +341,12 @@ func (p *Processor) shouldProcessEvent(event es.PersistedEvent, aggregateTypeFil
 		return false
 	}
 
-	// Apply aggregate type filter if projection is scoped
+	// Apply aggregate type filter if consumer is scoped
 	if aggregateTypeFilter != nil && !aggregateTypeFilter[event.AggregateType] {
 		return false
 	}
 
-	// Apply bounded context filter if projection is scoped
+	// Apply bounded context filter if consumer is scoped
 	if boundedContextFilter != nil && !boundedContextFilter[event.BoundedContext] {
 		return false
 	}
@@ -354,7 +354,7 @@ func (p *Processor) shouldProcessEvent(event es.PersistedEvent, aggregateTypeFil
 	return true
 }
 
-func (p *Processor) processBatch(ctx context.Context, proj projection.Projection, aggregateTypeFilter, boundedContextFilter map[string]bool) error {
+func (p *Processor) processBatch(ctx context.Context, proj consumer.Consumer, aggregateTypeFilter, boundedContextFilter map[string]bool) error {
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -382,7 +382,7 @@ func (p *Processor) processBatch(ctx context.Context, proj projection.Projection
 	}
 
 	// Process events with partition filter and aggregate type filter
-	// Note: Events are passed by value to projection handlers to enforce immutability.
+	// Note: Events are passed by value to consumer handlers to enforce immutability.
 	// This creates a 232-byte copy per event, but large data (Payload, Metadata) is not deep-copied
 	// since slices share references to their backing arrays. The immutability guarantee
 	// is more valuable than the minimal copy cost in event processing workloads.
@@ -399,19 +399,19 @@ func (p *Processor) processBatch(ctx context.Context, proj projection.Projection
 			continue
 		}
 
-		// Handle event - projection can use the transaction for atomic updates
+		// Handle event - consumer can use the transaction for atomic updates
 		handlerErr := proj.Handle(ctx, tx, event)
 		if handlerErr != nil {
 			if p.config.Logger != nil {
-				p.config.Logger.Error(ctx, "projection handler error",
-					"projection", proj.Name(),
+				p.config.Logger.Error(ctx, "consumer handler error",
+					"consumer", proj.Name(),
 					"position", event.GlobalPosition,
 					"aggregate_type", event.AggregateType,
 					"aggregate_id", event.AggregateID,
 					"event_type", event.EventType,
 					"error", handlerErr)
 			}
-			return fmt.Errorf("projection handler error at position %d: %w", event.GlobalPosition, handlerErr)
+			return fmt.Errorf("consumer handler error at position %d: %w", event.GlobalPosition, handlerErr)
 		}
 
 		lastPosition = event.GlobalPosition
@@ -434,13 +434,13 @@ func (p *Processor) processBatch(ctx context.Context, proj projection.Projection
 		// Log at Info level when events are actually processed, Debug for skipped-only batches
 		if processedCount > 0 {
 			p.config.Logger.Info(ctx, "events processed",
-				"projection", proj.Name(),
+				"consumer", proj.Name(),
 				"processed", processedCount,
 				"skipped", skippedCount,
 				"checkpoint", lastPosition)
 		} else {
 			p.config.Logger.Debug(ctx, "batch processed",
-				"projection", proj.Name(),
+				"consumer", proj.Name(),
 				"processed", processedCount,
 				"skipped", skippedCount,
 				"checkpoint", lastPosition)

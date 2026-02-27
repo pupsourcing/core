@@ -27,7 +27,7 @@ import (
 
 	"github.com/getpup/pupsourcing/es"
 	"github.com/getpup/pupsourcing/es/adapters/postgres"
-	"github.com/getpup/pupsourcing/es/projection"
+	"github.com/getpup/pupsourcing/es/consumer"
 )
 
 // UserCreated event
@@ -163,7 +163,7 @@ func handleAppendMode(ctx context.Context, db *sql.DB, store *postgres.Store, nu
 
 func handleProcessMode(ctx context.Context, db *sql.DB, store *postgres.Store) {
 	proj := &ReliableProjection{}
-	config := projection.DefaultProcessorConfig()
+	config := consumer.DefaultProcessorConfig()
 	processor := postgres.NewProcessor(db, store, &config)
 
 	// Check current checkpoint before starting
@@ -254,7 +254,7 @@ func handleStatusMode(ctx context.Context, db *sql.DB) {
 func getCurrentCheckpoint(ctx context.Context, db *sql.DB, projectionName string) int64 {
 	var checkpoint int64
 	err := db.QueryRowContext(ctx,
-		"SELECT last_global_position FROM projection_checkpoints WHERE projection_name = $1",
+		"SELECT last_global_position FROM consumer_checkpoints WHERE consumer_name = $1",
 		projectionName).Scan(&checkpoint)
 	if err != nil && err != sql.ErrNoRows {
 		log.Fatalf("Failed to get checkpoint: %v", err)

@@ -1,7 +1,7 @@
 // Package integration_test contains integration tests for the runner package.
 // These tests require a running PostgreSQL instance.
 //
-// Run with: go test -tags=integration ./es/projection/runner/integration_test/...
+// Run with: go test -tags=integration ./es/consumer/runner/integration_test/...
 //
 //go:build integration
 
@@ -20,9 +20,9 @@ import (
 
 	"github.com/getpup/pupsourcing/es"
 	"github.com/getpup/pupsourcing/es/adapters/postgres"
+	"github.com/getpup/pupsourcing/es/consumer"
+	"github.com/getpup/pupsourcing/es/consumer/runner"
 	"github.com/getpup/pupsourcing/es/migrations"
-	"github.com/getpup/pupsourcing/es/projection"
-	"github.com/getpup/pupsourcing/es/projection/runner"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 )
@@ -78,7 +78,7 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 
 	// Drop existing objects to ensure clean state
 	_, err := db.Exec(`
-		DROP TABLE IF EXISTS projection_checkpoints CASCADE;
+		DROP TABLE IF EXISTS consumer_checkpoints CASCADE;
 		DROP TABLE IF EXISTS aggregate_heads CASCADE;
 		DROP TABLE IF EXISTS events CASCADE;
 	`)
@@ -91,7 +91,7 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 		OutputFolder:        tmpDir,
 		OutputFilename:      "test.sql",
 		EventsTable:         "events",
-		CheckpointsTable:    "projection_checkpoints",
+		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
 	}
 
@@ -126,13 +126,13 @@ func appendTestEvents(t *testing.T, ctx context.Context, db *sql.DB, store *post
 			{
 				BoundedContext: "TestContext",
 				AggregateType:  "TestAggregate",
-				AggregateID:   uuid.New().String(),
-				EventID:       uuid.New(),
-				EventType:     "TestEvent",
-				EventVersion:  1,
-				Payload:       payload,
-				Metadata:      []byte(`{}`),
-				CreatedAt:     time.Now(),
+				AggregateID:    uuid.New().String(),
+				EventID:        uuid.New(),
+				EventType:      "TestEvent",
+				EventVersion:   1,
+				Payload:        payload,
+				Metadata:       []byte(`{}`),
+				CreatedAt:      time.Now(),
 			},
 		}
 
@@ -166,58 +166,58 @@ func appendTestEvents(t *testing.T, ctx context.Context, db *sql.DB, store *post
 	return persistedEvents
 }
 
-// createAndRunPartitions runs a projection with N partitions
-func createAndRunPartitions(ctx context.Context, db *sql.DB, store *postgres.Store, proj projection.Projection, totalPartitions int) error {
-	var runners []runner.ProjectionRunner
+// createAndRunPartitions runs a consumer with N partitions
+func createAndRunPartitions(ctx context.Context, db *sql.DB, store *postgres.Store, proj consumer.Consumer, totalPartitions int) error {
+	var runners []runner.ConsumerRunner
 	for i := 0; i < totalPartitions; i++ {
-		config := projection.DefaultProcessorConfig()
+		config := consumer.DefaultProcessorConfig()
 		config.PartitionKey = i
 		config.TotalPartitions = totalPartitions
 		processor := postgres.NewProcessor(db, store, &config)
-		runners = append(runners, runner.ProjectionRunner{
-			Projection: proj,
-			Processor:  processor,
+		runners = append(runners, runner.ConsumerRunner{
+			Consumer:  proj,
+			Processor: processor,
 		})
 	}
-	
+
 	r := runner.New()
 	return r.Run(ctx, runners)
 }
 
-// createAndRunMultiple runs multiple projections
-func createAndRunMultiple(ctx context.Context, db *sql.DB, store *postgres.Store, projections []projection.Projection) error {
-	var runners []runner.ProjectionRunner
-	for _, proj := range projections {
-		config := projection.DefaultProcessorConfig()
+// createAndRunMultiple runs multiple consumers
+func createAndRunMultiple(ctx context.Context, db *sql.DB, store *postgres.Store, consumers []consumer.Consumer) error {
+	var runners []runner.ConsumerRunner
+	for _, proj := range consumers {
+		config := consumer.DefaultProcessorConfig()
 		processor := postgres.NewProcessor(db, store, &config)
-		runners = append(runners, runner.ProjectionRunner{
-			Projection: proj,
-			Processor:  processor,
+		runners = append(runners, runner.ConsumerRunner{
+			Consumer:  proj,
+			Processor: processor,
 		})
 	}
-	
+
 	r := runner.New()
 	return r.Run(ctx, runners)
 }
 
-// countingProjection counts events processed
-type countingProjection struct {
+// countingConsumer counts events processed
+type countingConsumer struct {
 	name  string
 	count int64
 }
 
-func (p *countingProjection) Name() string {
+func (p *countingConsumer) Name() string {
 	return p.name
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *countingProjection) Handle(_ context.Context, _ *sql.Tx, _ es.PersistedEvent) error {
+func (p *countingConsumer) Handle(_ context.Context, _ *sql.Tx, _ es.PersistedEvent) error {
 	atomic.AddInt64(&p.count, 1)
 	return nil
 }
 
-// TestRunProjectionPartitions tests running a projection with multiple partitions
-func TestRunProjectionPartitions(t *testing.T) {
+// TestRunConsumerPartitions tests running a consumer with multiple partitions
+func TestRunConsumerPartitions(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -230,8 +230,8 @@ func TestRunProjectionPartitions(t *testing.T) {
 	eventCount := 20
 	appendTestEvents(t, ctx, db, store, eventCount)
 
-	// Create projection
-	proj := &countingProjection{name: "test_partition_runner"}
+	// Create consumer
+	proj := &countingConsumer{name: "test_partition_runner"}
 
 	// Run with 4 partitions for a short time
 	ctx2, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -239,7 +239,7 @@ func TestRunProjectionPartitions(t *testing.T) {
 
 	err := createAndRunPartitions(ctx2, db, store, proj, 4)
 	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("RunProjectionPartitions failed: %v", err)
+		t.Fatalf("RunConsumerPartitions failed: %v", err)
 	}
 
 	// Verify events were processed
@@ -249,7 +249,7 @@ func TestRunProjectionPartitions(t *testing.T) {
 	}
 
 	// Verify checkpoints were created (one per partition)
-	rows, err := db.Query("SELECT projection_name, last_global_position FROM projection_checkpoints ORDER BY projection_name")
+	rows, err := db.Query("SELECT consumer_name, last_global_position FROM consumer_checkpoints ORDER BY consumer_name")
 	if err != nil {
 		t.Fatalf("Failed to query checkpoints: %v", err)
 	}
@@ -275,8 +275,8 @@ func TestRunProjectionPartitions(t *testing.T) {
 	}
 }
 
-// TestRunMultipleProjections tests running multiple different projections
-func TestRunMultipleProjections(t *testing.T) {
+// TestRunMultipleConsumers tests running multiple different consumers
+func TestRunMultipleConsumers(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -289,34 +289,34 @@ func TestRunMultipleProjections(t *testing.T) {
 	eventCount := 15
 	appendTestEvents(t, ctx, db, store, eventCount)
 
-	// Create two projections
-	proj1 := &countingProjection{name: "test_multi_proj1"}
-	proj2 := &countingProjection{name: "test_multi_proj2"}
+	// Create two consumers
+	proj1 := &countingConsumer{name: "test_multi_proj1"}
+	proj2 := &countingConsumer{name: "test_multi_proj2"}
 
-	projections := []projection.Projection{proj1, proj2}
+	consumers := []consumer.Consumer{proj1, proj2}
 
-	// Run both projections for a short time
+	// Run both consumers for a short time
 	ctx2, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-	err := createAndRunMultiple(ctx2, db, store, projections)
+	err := createAndRunMultiple(ctx2, db, store, consumers)
 	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("createAndRunMultiple failed: %v", err)
 	}
 
-	// Verify both projections processed all events
+	// Verify both consumers processed all events
 	count1 := atomic.LoadInt64(&proj1.count)
 	count2 := atomic.LoadInt64(&proj2.count)
 
 	if count1 != int64(eventCount) {
-		t.Errorf("Projection 1: Expected %d events processed, got %d", eventCount, count1)
+		t.Errorf("Consumer 1: Expected %d events processed, got %d", eventCount, count1)
 	}
 	if count2 != int64(eventCount) {
-		t.Errorf("Projection 2: Expected %d events processed, got %d", eventCount, count2)
+		t.Errorf("Consumer 2: Expected %d events processed, got %d", eventCount, count2)
 	}
 
-	// Verify both projections have checkpoints
-	rows, err := db.Query("SELECT projection_name, last_global_position FROM projection_checkpoints ORDER BY projection_name")
+	// Verify both consumers have checkpoints
+	rows, err := db.Query("SELECT consumer_name, last_global_position FROM consumer_checkpoints ORDER BY consumer_name")
 	if err != nil {
 		t.Fatalf("Failed to query checkpoints: %v", err)
 	}
@@ -337,27 +337,27 @@ func TestRunMultipleProjections(t *testing.T) {
 	}
 
 	if _, ok := checkpoints["test_multi_proj1"]; !ok {
-		t.Error("Missing checkpoint for projection 1")
+		t.Error("Missing checkpoint for consumer 1")
 	}
 	if _, ok := checkpoints["test_multi_proj2"]; !ok {
-		t.Error("Missing checkpoint for projection 2")
+		t.Error("Missing checkpoint for consumer 2")
 	}
 }
 
-// failingProjection fails after processing N events
-type failingProjection struct {
+// failingConsumer fails after processing N events
+type failingConsumer struct {
 	name         string
 	count        int64
 	failAfter    int64
 	shouldResume bool
 }
 
-func (p *failingProjection) Name() string {
+func (p *failingConsumer) Name() string {
 	return p.name
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *failingProjection) Handle(_ context.Context, _ *sql.Tx, _ es.PersistedEvent) error {
+func (p *failingConsumer) Handle(_ context.Context, _ *sql.Tx, _ es.PersistedEvent) error {
 	count := atomic.AddInt64(&p.count, 1)
 	if !p.shouldResume && count > p.failAfter {
 		return errors.New("intentional failure")
@@ -365,7 +365,7 @@ func (p *failingProjection) Handle(_ context.Context, _ *sql.Tx, _ es.PersistedE
 	return nil
 }
 
-// TestRunnerErrorHandling tests that runner properly handles projection errors
+// TestRunnerErrorHandling tests that runner properly handles consumer errors
 func TestRunnerErrorHandling(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
@@ -378,8 +378,8 @@ func TestRunnerErrorHandling(t *testing.T) {
 	// Append test events
 	appendTestEvents(t, ctx, db, store, 20)
 
-	// Create projection that fails after 10 events (enough to save at least one batch checkpoint)
-	proj := &failingProjection{
+	// Create consumer that fails after 10 events (enough to save at least one batch checkpoint)
+	proj := &failingConsumer{
 		name:      "test_error_handling",
 		failAfter: 10,
 	}
@@ -387,13 +387,13 @@ func TestRunnerErrorHandling(t *testing.T) {
 	r := runner.New()
 
 	// Use small batch size to ensure we save checkpoints before failure
-	config := projection.DefaultProcessorConfig()
+	config := consumer.DefaultProcessorConfig()
 	config.BatchSize = 5
 
 	// Create processor with small batch size
 	processor := postgres.NewProcessor(db, store, &config)
-	runners := []runner.ProjectionRunner{
-		{Projection: proj, Processor: processor},
+	runners := []runner.ConsumerRunner{
+		{Consumer: proj, Processor: processor},
 	}
 
 	// Run and expect failure
@@ -407,7 +407,7 @@ func TestRunnerErrorHandling(t *testing.T) {
 
 	// Verify checkpoint was saved for events before failure
 	var checkpoint int64
-	err = db.QueryRow("SELECT last_global_position FROM projection_checkpoints WHERE projection_name = $1",
+	err = db.QueryRow("SELECT last_global_position FROM consumer_checkpoints WHERE consumer_name = $1",
 		"test_error_handling").Scan(&checkpoint)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -420,15 +420,15 @@ func TestRunnerErrorHandling(t *testing.T) {
 		t.Error("Expected non-zero checkpoint after partial processing")
 	}
 
-	// Resume projection (shouldn't fail this time)
+	// Resume consumer (shouldn't fail this time)
 	proj.shouldResume = true
 	ctx3, cancel3 := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel3()
 
 	// Create processor for resume
 	resumeProcessor := postgres.NewProcessor(db, store, &config)
-	resumeRunners := []runner.ProjectionRunner{
-		{Projection: proj, Processor: resumeProcessor},
+	resumeRunners := []runner.ConsumerRunner{
+		{Consumer: proj, Processor: resumeProcessor},
 	}
 
 	err = r.Run(ctx3, resumeRunners)
@@ -456,8 +456,8 @@ func TestRunnerConcurrentCheckpoints(t *testing.T) {
 	// Append many events to ensure all partitions get work
 	appendTestEvents(t, ctx, db, store, 100)
 
-	// Create projection
-	proj := &countingProjection{name: "test_concurrent_checkpoints"}
+	// Create consumer
+	proj := &countingConsumer{name: "test_concurrent_checkpoints"}
 
 	// Run with 4 partitions
 	ctx2, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -465,7 +465,7 @@ func TestRunnerConcurrentCheckpoints(t *testing.T) {
 
 	err := createAndRunPartitions(ctx2, db, store, proj, 4)
 	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("RunProjectionPartitions failed: %v", err)
+		t.Fatalf("RunConsumerPartitions failed: %v", err)
 	}
 
 	// Verify all events were processed
@@ -475,7 +475,7 @@ func TestRunnerConcurrentCheckpoints(t *testing.T) {
 	}
 
 	// Verify checkpoints for each partition exist
-	rows, err := db.Query("SELECT projection_name, last_global_position FROM projection_checkpoints ORDER BY projection_name")
+	rows, err := db.Query("SELECT consumer_name, last_global_position FROM consumer_checkpoints ORDER BY consumer_name")
 	if err != nil {
 		t.Fatalf("Failed to query checkpoints: %v", err)
 	}

@@ -213,11 +213,11 @@ _, err := tx.ExecContext(ctx,
 
 ```sql
 SELECT 
-    projection_name,
+    consumer_name,
     last_global_position,
     (SELECT MAX(global_position) FROM events) - last_global_position as lag,
     updated_at
-FROM projection_checkpoints
+FROM consumer_checkpoints
 ORDER BY lag DESC;
 ```
 
@@ -225,7 +225,7 @@ ORDER BY lag DESC;
 
 ```sql
 SELECT 
-    projection_name,
+    consumer_name,
     last_global_position,
     updated_at,
     CASE 
@@ -233,7 +233,7 @@ SELECT
         WHEN last_global_position >= (SELECT MAX(global_position) FROM events) THEN 'CAUGHT_UP'
         ELSE 'PROCESSING'
     END as status
-FROM projection_checkpoints;
+FROM consumer_checkpoints;
 ```
 
 ## Common Questions

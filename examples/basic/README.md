@@ -130,7 +130,7 @@ func (p *UserProjection) Handle(ctx context.Context, tx *sql.Tx, event es.Persis
 Create a processor and run the projection:
 
 ```go
-config := projection.DefaultProcessorConfig()
+config := consumer.DefaultProcessorConfig()
 processor := postgres.NewProcessor(db, store, &config)
 processor.Run(ctx, proj)
 ```
@@ -146,7 +146,7 @@ The migration generates three tables:
 2. **`aggregate_heads`** - Tracks current version of each aggregate
    - Used for fast version lookups (O(1) instead of O(n))
 
-3. **`projection_checkpoints`** - Tracks projection progress
+3. **`consumer_checkpoints`** - Tracks projection progress
    - Each projection maintains its own checkpoint
    - Allows projections to resume after restart
 

@@ -30,7 +30,7 @@ type StoreConfig struct {
 	// EventsTable is the name of the events table
 	EventsTable string
 
-	// CheckpointsTable is the name of the projection checkpoints table
+	// CheckpointsTable is the name of the consumer checkpoints table
 	CheckpointsTable string
 
 	// AggregateHeadsTable is the name of the aggregate version tracking table
@@ -41,7 +41,7 @@ type StoreConfig struct {
 func DefaultStoreConfig() StoreConfig {
 	return StoreConfig{
 		EventsTable:         "events",
-		CheckpointsTable:    "projection_checkpoints",
+		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
 		Logger:              nil, // No logging by default
 	}
@@ -64,7 +64,7 @@ func WithEventsTable(tableName string) StoreOption {
 	}
 }
 
-// WithCheckpointsTable sets a custom projection checkpoints table name.
+// WithCheckpointsTable sets a custom consumer checkpoints table name.
 func WithCheckpointsTable(tableName string) StoreOption {
 	return func(c *StoreConfig) {
 		c.CheckpointsTable = tableName
@@ -585,15 +585,15 @@ func parseTimestamp(s string) (time.Time, error) {
 }
 
 // GetCheckpoint implements store.CheckpointStore.
-func (s *Store) GetCheckpoint(ctx context.Context, tx es.DBTX, projectionName string) (int64, error) {
+func (s *Store) GetCheckpoint(ctx context.Context, tx es.DBTX, consumerName string) (int64, error) {
 	query := fmt.Sprintf(`
 		SELECT last_global_position 
 		FROM %s 
-		WHERE projection_name = ?
+		WHERE consumer_name = ?
 	`, s.config.CheckpointsTable)
 
 	var checkpoint int64
-	err := tx.QueryRowContext(ctx, query, projectionName).Scan(&checkpoint)
+	err := tx.QueryRowContext(ctx, query, consumerName).Scan(&checkpoint)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, nil
@@ -604,16 +604,16 @@ func (s *Store) GetCheckpoint(ctx context.Context, tx es.DBTX, projectionName st
 }
 
 // UpdateCheckpoint implements store.CheckpointStore.
-func (s *Store) UpdateCheckpoint(ctx context.Context, tx es.DBTX, projectionName string, position int64) error {
+func (s *Store) UpdateCheckpoint(ctx context.Context, tx es.DBTX, consumerName string, position int64) error {
 	query := fmt.Sprintf(`
-		INSERT INTO %s (projection_name, last_global_position, updated_at)
+		INSERT INTO %s (consumer_name, last_global_position, updated_at)
 		VALUES (?, ?, datetime('now'))
-		ON CONFLICT (projection_name)
+		ON CONFLICT (consumer_name)
 		DO UPDATE SET 
 			last_global_position = excluded.last_global_position,
 			updated_at = excluded.updated_at
 	`, s.config.CheckpointsTable)
 
-	_, err := tx.ExecContext(ctx, query, projectionName, position)
+	_, err := tx.ExecContext(ctx, query, consumerName, position)
 	return err
 }

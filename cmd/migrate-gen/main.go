@@ -29,7 +29,7 @@ func main() {
 		outputFolder     = flag.String("output", "migrations", "Output folder for migration file")
 		outputFilename   = flag.String("filename", "", "Output filename (default: timestamp-based)")
 		eventsTable      = flag.String("events-table", "events", "Name of events table")
-		checkpointsTable = flag.String("checkpoints-table", "projection_checkpoints", "Name of checkpoints table")
+		checkpointsTable = flag.String("checkpoints-table", "consumer_checkpoints", "Name of checkpoints table")
 	)
 
 	flag.Parse()

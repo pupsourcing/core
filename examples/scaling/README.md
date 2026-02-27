@@ -214,11 +214,11 @@ sudo systemctl start projection-worker@3
 
 ```sql
 SELECT 
-    projection_name,
+    consumer_name,
     last_global_position,
     (SELECT MAX(global_position) FROM events) - last_global_position as lag
-FROM projection_checkpoints
-WHERE projection_name = 'scalable_projection';
+FROM consumer_checkpoints
+WHERE consumer_name = 'scalable_projection';
 ```
 
 ## Common Scenarios

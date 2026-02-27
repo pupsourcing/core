@@ -85,9 +85,9 @@ func main() {
 func setupSchema(db *sql.DB) error {
 	// Drop existing tables for clean start
 	// MySQL requires separate Exec calls for each statement
-	_, err := db.Exec(`DROP TABLE IF EXISTS projection_checkpoints`)
+	_, err := db.Exec(`DROP TABLE IF EXISTS consumer_checkpoints`)
 	if err != nil {
-		return fmt.Errorf("failed to drop projection_checkpoints table: %w", err)
+		return fmt.Errorf("failed to drop consumer_checkpoints table: %w", err)
 	}
 	_, err = db.Exec(`DROP TABLE IF EXISTS aggregate_heads`)
 	if err != nil {
@@ -104,7 +104,7 @@ func setupSchema(db *sql.DB) error {
 		OutputFolder:        tmpDir,
 		OutputFilename:      "init.sql",
 		EventsTable:         "events",
-		CheckpointsTable:    "projection_checkpoints",
+		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
 	}
 

@@ -11,7 +11,7 @@
 - **Transaction-Agnostic**: Callers control transaction boundaries using the `DBTX` interface
 - **Optimistic Concurrency**: Built-in version conflict detection via database constraints
 - **Immutable Events**: Events are value objects until persisted
-- **Pull-Based Projections**: Sequential event processing by global position
+- **Pull-Based Consumers**: Sequential event processing by global position
 
 ### Package Structure
 ```
@@ -19,7 +19,7 @@ es/                      # Core event sourcing packages
 ├── event.go            # Core event types (Event, PersistedEvent)
 ├── dbtx.go             # Database transaction abstraction (DBTX interface)
 ├── store/              # Event store interfaces
-├── projection/         # Projection processing with checkpoints
+├── consumer/          # Consumer processing with checkpoints
 ├── adapters/
 │   └── postgres/       # PostgreSQL implementation
 └── migrations/         # Migration generation utilities
@@ -71,12 +71,12 @@ examples/               # Example applications
 - Include table-driven tests for comprehensive coverage
 - Test files should be named `*_test.go`
 - Use `testing.T` for standard tests
-- Example: `es/projection/projection_test.go`
+- Example: `es/consumer/consumer_test.go`
 
 #### Integration Tests
 - Located in `integration_test/` subdirectories
 - Require PostgreSQL: `docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=pupsourcing_test postgres:16`
-- Run with: `go test -tags=integration ./es/adapters/postgres/integration_test/... ./es/projection/integration_test/...`
+- Run with: `go test -tags=integration ./es/adapters/postgres/integration_test/... ./es/consumer/integration_test/...`
 - Use `-p 1` flag to run tests sequentially to avoid database conflicts
 - Set environment variables: `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
 
@@ -89,7 +89,7 @@ go test ./...
 go test -v -race -coverprofile=coverage.out ./...
 
 # Integration tests
-go test -p 1 -v -tags=integration ./es/adapters/postgres/integration_test/... ./es/projection/integration_test/...
+go test -p 1 -v -tags=integration ./es/adapters/postgres/integration_test/... ./es/consumer/integration_test/...
 ```
 
 ### Linting & Code Quality
@@ -136,7 +136,7 @@ Or add to your code:
 This generates:
 - Event store table with proper indexes
 - Aggregate heads table for version tracking
-- Projection checkpoint table
+- Consumer checkpoint table
 - All necessary constraints
 
 ## CI/CD
@@ -206,7 +206,7 @@ for _, event := range stream.Events {
 }
 ```
 
-### Implementing Projections
+### Implementing Consumers
 ```go
 type MyProjection struct {}
 
@@ -223,11 +223,11 @@ func (p *MyProjection) Handle(ctx context.Context, tx *sql.Tx, event es.Persiste
 
 ### Horizontal Scaling
 ```go
-config := projection.DefaultProcessorConfig()
+config := consumer.DefaultProcessorConfig()
 config.TotalPartitions = 4  // Total number of workers
 config.PartitionKey = 0     // This worker's partition (0-3)
 
-processor := projection.NewProcessor(db, store, config)
+processor := consumer.NewProcessor(db, store, config)
 ```
 
 ## Best Practices for Contributors
@@ -253,7 +253,7 @@ processor := projection.NewProcessor(db, store, config)
 
 Current focus (v1):
 - Event store with PostgreSQL ✅
-- Projection processing ✅
+- Consumer processing ✅
 - Optimistic concurrency ✅
 - Horizontal scaling support ✅
 - Read API for aggregate streams ✅

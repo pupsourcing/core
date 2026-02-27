@@ -1,7 +1,7 @@
-// Package integration_test contains integration tests for projections.
+// Package integration_test contains integration tests for consumers.
 // These tests require a running PostgreSQL instance.
 //
-// Run with: go test -tags=integration ./es/projection/integration_test/...
+// Run with: go test -tags=integration ./es/consumer/integration_test/...
 //
 //go:build integration
 
@@ -20,8 +20,8 @@ import (
 
 	"github.com/getpup/pupsourcing/es"
 	"github.com/getpup/pupsourcing/es/adapters/postgres"
+	"github.com/getpup/pupsourcing/es/consumer"
 	"github.com/getpup/pupsourcing/es/migrations"
-	"github.com/getpup/pupsourcing/es/projection"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 )
@@ -77,7 +77,7 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 
 	// Drop existing objects to ensure clean state
 	_, err := db.Exec(`
-		DROP TABLE IF EXISTS projection_checkpoints CASCADE;
+		DROP TABLE IF EXISTS consumer_checkpoints CASCADE;
 		DROP TABLE IF EXISTS aggregate_heads CASCADE;
 		DROP TABLE IF EXISTS events CASCADE;
 	`)
@@ -90,7 +90,7 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 		OutputFolder:        tmpDir,
 		OutputFilename:      "test.sql",
 		EventsTable:         "events",
-		CheckpointsTable:    "projection_checkpoints",
+		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
 	}
 
@@ -109,47 +109,47 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 	}
 }
 
-// testProjection is a simple projection for testing
-type testProjection struct {
+// testConsumer is a simple consumer for testing
+type testConsumer struct {
 	name   string
 	events []es.PersistedEvent
 	mu     sync.Mutex
 	errors []error
 }
 
-func newTestProjection(name string) *testProjection {
-	return &testProjection{
+func newTestConsumer(name string) *testConsumer {
+	return &testConsumer{
 		name:   name,
 		events: make([]es.PersistedEvent, 0),
 		errors: make([]error, 0),
 	}
 }
 
-func (p *testProjection) Name() string {
+func (p *testConsumer) Name() string {
 	return p.name
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *testProjection) Handle(ctx context.Context, _ *sql.Tx, event es.PersistedEvent) error {
+func (p *testConsumer) Handle(ctx context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.events = append(p.events, event)
 	return nil
 }
 
-func (p *testProjection) EventCount() int {
+func (p *testConsumer) EventCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return len(p.events)
 }
 
-func (p *testProjection) GetEvents() []es.PersistedEvent {
+func (p *testConsumer) GetEvents() []es.PersistedEvent {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return append([]es.PersistedEvent{}, p.events...)
 }
 
-func TestProjection_BasicProcessing(t *testing.T) {
+func TestConsumer_BasicProcessing(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -164,24 +164,24 @@ func TestProjection_BasicProcessing(t *testing.T) {
 		{
 			BoundedContext: "TestContext",
 			AggregateType:  "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "EventCreated",
-			EventVersion:  1,
-			Payload:       []byte(`{"id":1}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			AggregateID:    aggregateID,
+			EventID:        uuid.New(),
+			EventType:      "EventCreated",
+			EventVersion:   1,
+			Payload:        []byte(`{"id":1}`),
+			Metadata:       []byte(`{}`),
+			CreatedAt:      time.Now(),
 		},
 		{
 			BoundedContext: "TestContext",
 			AggregateType:  "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "EventUpdated",
-			EventVersion:  1,
-			Payload:       []byte(`{"id":2}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			AggregateID:    aggregateID,
+			EventID:        uuid.New(),
+			EventType:      "EventUpdated",
+			EventVersion:   1,
+			Payload:        []byte(`{"id":2}`),
+			Metadata:       []byte(`{}`),
+			CreatedAt:      time.Now(),
 		},
 	}
 
@@ -192,9 +192,9 @@ func TestProjection_BasicProcessing(t *testing.T) {
 	}
 	tx.Commit()
 
-	// Run projection
-	proj := newTestProjection("test_projection")
-	config := projection.DefaultProcessorConfig()
+	// Run consumer
+	proj := newTestConsumer("test_consumer")
+	config := consumer.DefaultProcessorConfig()
 	processor := postgres.NewProcessor(db, store, &config)
 
 	// Run for a short time - increased timeout for CI environment
@@ -202,9 +202,9 @@ func TestProjection_BasicProcessing(t *testing.T) {
 	defer cancel()
 
 	err = processor.Run(ctx2, proj)
-	// Accept no error, projection stopped, deadline exceeded (possibly wrapped without %w)
+	// Accept no error, consumer stopped, deadline exceeded (possibly wrapped without %w)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, postgres.ErrProjectionStopped) || strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, postgres.ErrConsumerStopped) || strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
 			// acceptable
 		} else {
 			t.Fatalf("Unexpected error from processor: %v, %T", err, err)
@@ -218,7 +218,7 @@ func TestProjection_BasicProcessing(t *testing.T) {
 	}
 }
 
-func TestProjection_Checkpoint(t *testing.T) {
+func TestConsumer_Checkpoint(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -234,13 +234,13 @@ func TestProjection_Checkpoint(t *testing.T) {
 		allEvents[i] = es.Event{
 			BoundedContext: "TestContext",
 			AggregateType:  "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     fmt.Sprintf("Event%d", i+1),
-			EventVersion:  1,
-			Payload:       []byte(fmt.Sprintf(`{"num":%d}`, i+1)),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			AggregateID:    aggregateID,
+			EventID:        uuid.New(),
+			EventType:      fmt.Sprintf("Event%d", i+1),
+			EventVersion:   1,
+			Payload:        []byte(fmt.Sprintf(`{"num":%d}`, i+1)),
+			Metadata:       []byte(`{}`),
+			CreatedAt:      time.Now(),
 		}
 	}
 
@@ -252,8 +252,8 @@ func TestProjection_Checkpoint(t *testing.T) {
 	tx.Commit()
 
 	// First run processes some events
-	proj1 := newTestProjection("checkpoint_test")
-	config := projection.DefaultProcessorConfig()
+	proj1 := newTestConsumer("checkpoint_test")
+	config := consumer.DefaultProcessorConfig()
 	config.BatchSize = 2
 	processor1 := postgres.NewProcessor(db, store, &config)
 
@@ -268,7 +268,7 @@ func TestProjection_Checkpoint(t *testing.T) {
 	}
 
 	// Second run should resume from checkpoint
-	proj2 := newTestProjection("checkpoint_test")
+	proj2 := newTestConsumer("checkpoint_test")
 	processor2 := postgres.NewProcessor(db, store, &config)
 
 	ctx2, cancel2 := context.WithTimeout(ctx, 500*time.Millisecond)
@@ -292,7 +292,7 @@ func TestProjection_Checkpoint(t *testing.T) {
 	}
 }
 
-func TestProjection_ErrorHandling(t *testing.T) {
+func TestConsumer_ErrorHandling(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -306,22 +306,22 @@ func TestProjection_ErrorHandling(t *testing.T) {
 	event := es.Event{
 		BoundedContext: "TestContext",
 		AggregateType:  "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "ErrorEvent",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		AggregateID:    aggregateID,
+		EventID:        uuid.New(),
+		EventType:      "ErrorEvent",
+		EventVersion:   1,
+		Payload:        []byte(`{}`),
+		Metadata:       []byte(`{}`),
+		CreatedAt:      time.Now(),
 	}
 
 	tx, _ := db.BeginTx(ctx, nil)
 	store.Append(ctx, tx, es.Any(), []es.Event{event})
 	tx.Commit()
 
-	// Create projection that returns error
-	errorProj := &errorProjection{name: "error_test"}
-	config := projection.DefaultProcessorConfig()
+	// Create consumer that returns error
+	errorProj := &errorConsumer{name: "error_test"}
+	config := consumer.DefaultProcessorConfig()
 	processor := postgres.NewProcessor(db, store, &config)
 
 	ctx2, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
@@ -329,24 +329,24 @@ func TestProjection_ErrorHandling(t *testing.T) {
 
 	err := processor.Run(ctx2, errorProj)
 	if err == nil {
-		t.Error("Expected error from projection processor")
+		t.Error("Expected error from consumer processor")
 	}
-	if err != nil && err != postgres.ErrProjectionStopped && err != context.DeadlineExceeded {
-		// Should be wrapped ErrProjectionStopped
+	if err != nil && err != postgres.ErrConsumerStopped && err != context.DeadlineExceeded {
+		// Should be wrapped ErrConsumerStopped
 		t.Logf("Got error: %v", err)
 	}
 }
 
-type errorProjection struct {
+type errorConsumer struct {
 	name string
 }
 
-func (p *errorProjection) Name() string {
+func (p *errorConsumer) Name() string {
 	return p.name
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *errorProjection) Handle(ctx context.Context, _ *sql.Tx, event es.PersistedEvent) error {
+func (p *errorConsumer) Handle(ctx context.Context, _ *sql.Tx, event es.PersistedEvent) error {
 	return fmt.Errorf("intentional error")
 }
 
@@ -367,13 +367,13 @@ func TestProcessor_RunModeOneOff(t *testing.T) {
 		events[i] = es.Event{
 			BoundedContext: "TestContext",
 			AggregateType:  "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     fmt.Sprintf("Event%d", i+1),
-			EventVersion:  1,
-			Payload:       []byte(fmt.Sprintf(`{"num":%d}`, i+1)),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			AggregateID:    aggregateID,
+			EventID:        uuid.New(),
+			EventType:      fmt.Sprintf("Event%d", i+1),
+			EventVersion:   1,
+			Payload:        []byte(fmt.Sprintf(`{"num":%d}`, i+1)),
+			Metadata:       []byte(`{}`),
+			CreatedAt:      time.Now(),
 		}
 	}
 
@@ -384,12 +384,12 @@ func TestProcessor_RunModeOneOff(t *testing.T) {
 	}
 	tx.Commit()
 
-	// Create test projection
-	proj := newTestProjection("test_oneoff")
+	// Create test consumer
+	proj := newTestConsumer("test_oneoff")
 
 	// Configure processor in one-off mode
-	config := projection.DefaultProcessorConfig()
-	config.RunMode = projection.RunModeOneOff
+	config := consumer.DefaultProcessorConfig()
+	config.RunMode = consumer.RunModeOneOff
 	config.BatchSize = 10
 
 	processor := postgres.NewProcessor(db, store, &config)
@@ -428,12 +428,12 @@ func TestProcessor_RunModeOneOff_EmptyStore(t *testing.T) {
 
 	// No events appended - empty store
 
-	// Create test projection
-	proj := newTestProjection("test_oneoff_empty")
+	// Create test consumer
+	proj := newTestConsumer("test_oneoff_empty")
 
 	// Configure processor in one-off mode
-	config := projection.DefaultProcessorConfig()
-	config.RunMode = projection.RunModeOneOff
+	config := consumer.DefaultProcessorConfig()
+	config.RunMode = consumer.RunModeOneOff
 
 	processor := postgres.NewProcessor(db, store, &config)
 
@@ -466,13 +466,13 @@ func TestProcessor_RunModeOneOff_PartialBatch(t *testing.T) {
 		events[i] = es.Event{
 			BoundedContext: "TestContext",
 			AggregateType:  "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     fmt.Sprintf("Event%d", i+1),
-			EventVersion:  1,
-			Payload:       []byte(fmt.Sprintf(`{"num":%d}`, i+1)),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			AggregateID:    aggregateID,
+			EventID:        uuid.New(),
+			EventType:      fmt.Sprintf("Event%d", i+1),
+			EventVersion:   1,
+			Payload:        []byte(fmt.Sprintf(`{"num":%d}`, i+1)),
+			Metadata:       []byte(`{}`),
+			CreatedAt:      time.Now(),
 		}
 	}
 
@@ -483,12 +483,12 @@ func TestProcessor_RunModeOneOff_PartialBatch(t *testing.T) {
 	}
 	tx.Commit()
 
-	// Create test projection
-	proj := newTestProjection("test_oneoff_partial")
+	// Create test consumer
+	proj := newTestConsumer("test_oneoff_partial")
 
 	// Configure processor in one-off mode with batch size larger than events
-	config := projection.DefaultProcessorConfig()
-	config.RunMode = projection.RunModeOneOff
+	config := consumer.DefaultProcessorConfig()
+	config.RunMode = consumer.RunModeOneOff
 	config.BatchSize = 100
 
 	processor := postgres.NewProcessor(db, store, &config)
@@ -520,13 +520,13 @@ func TestProcessor_RunModeContinuous_StillWorks(t *testing.T) {
 		{
 			BoundedContext: "TestContext",
 			AggregateType:  "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event1",
-			EventVersion:  1,
-			Payload:       []byte(`{"id":1}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			AggregateID:    aggregateID,
+			EventID:        uuid.New(),
+			EventType:      "Event1",
+			EventVersion:   1,
+			Payload:        []byte(`{"id":1}`),
+			Metadata:       []byte(`{}`),
+			CreatedAt:      time.Now(),
 		},
 	}
 
@@ -537,11 +537,11 @@ func TestProcessor_RunModeContinuous_StillWorks(t *testing.T) {
 	}
 	tx.Commit()
 
-	// Create test projection
-	proj := newTestProjection("test_continuous")
+	// Create test consumer
+	proj := newTestConsumer("test_continuous")
 
 	// Configure processor in continuous mode (default)
-	config := projection.DefaultProcessorConfig()
+	config := consumer.DefaultProcessorConfig()
 	// RunMode defaults to RunModeContinuous
 
 	processor := postgres.NewProcessor(db, store, &config)

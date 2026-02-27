@@ -14,7 +14,7 @@ import (
 
 	"github.com/getpup/pupsourcing/es"
 	"github.com/getpup/pupsourcing/es/adapters/postgres"
-	"github.com/getpup/pupsourcing/es/projection"
+	"github.com/getpup/pupsourcing/es/consumer"
 )
 
 //go:generate go run ../../cmd/migrate-gen -output ../../migrations -filename init.sql
@@ -180,7 +180,7 @@ func main() {
 	fmt.Println("--- Running Projection with Logging ---")
 	proj := &UserProjection{users: []string{}}
 
-	processorConfig := projection.DefaultProcessorConfig()
+	processorConfig := consumer.DefaultProcessorConfig()
 	processorConfig.Logger = projectionLogger
 	processor := postgres.NewProcessor(db, store, &processorConfig)
 

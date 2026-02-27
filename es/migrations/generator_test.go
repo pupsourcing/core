@@ -14,7 +14,7 @@ func TestGeneratePostgres(t *testing.T) {
 		OutputFolder:     tmpDir,
 		OutputFilename:   "test_migration.sql",
 		EventsTable:      "events",
-		CheckpointsTable: "projection_checkpoints",
+		CheckpointsTable: "consumer_checkpoints",
 	}
 
 	err := GeneratePostgres(&config)
@@ -47,8 +47,8 @@ func TestGeneratePostgres(t *testing.T) {
 		"causation_id TEXT",
 		"metadata JSONB",
 		"created_at TIMESTAMPTZ NOT NULL",
-		"CREATE TABLE IF NOT EXISTS projection_checkpoints",
-		"projection_name TEXT PRIMARY KEY",
+		"CREATE TABLE IF NOT EXISTS consumer_checkpoints",
+		"consumer_name TEXT PRIMARY KEY",
 		"last_global_position BIGINT NOT NULL",
 		"updated_at TIMESTAMPTZ NOT NULL",
 	}
@@ -64,7 +64,7 @@ func TestGeneratePostgres(t *testing.T) {
 		"idx_events_aggregate",
 		"idx_events_event_type",
 		"idx_events_correlation",
-		"idx_projection_checkpoints_updated",
+		"idx_consumer_checkpoints_updated",
 	}
 
 	for _, idx := range requiredIndexes {
@@ -74,8 +74,8 @@ func TestGeneratePostgres(t *testing.T) {
 	}
 
 	// Verify essential tables are present
-	if !strings.Contains(sql, "projection_checkpoints") {
-		t.Error("Missing projection_checkpoints table")
+	if !strings.Contains(sql, "consumer_checkpoints") {
+		t.Error("Missing consumer_checkpoints table")
 	}
 }
 
@@ -118,7 +118,7 @@ func TestGenerateMySQL(t *testing.T) {
 		OutputFolder:     tmpDir,
 		OutputFilename:   "test_migration.sql",
 		EventsTable:      "events",
-		CheckpointsTable: "projection_checkpoints",
+		CheckpointsTable: "consumer_checkpoints",
 	}
 
 	err := GenerateMySQL(&config)
@@ -151,8 +151,8 @@ func TestGenerateMySQL(t *testing.T) {
 		"causation_id VARCHAR(255)",
 		"metadata JSON",
 		"created_at TIMESTAMP(6) NOT NULL",
-		"CREATE TABLE IF NOT EXISTS projection_checkpoints",
-		"projection_name VARCHAR(255) PRIMARY KEY",
+		"CREATE TABLE IF NOT EXISTS consumer_checkpoints",
+		"consumer_name VARCHAR(255) PRIMARY KEY",
 		"last_global_position BIGINT NOT NULL",
 		"updated_at TIMESTAMP(6) NOT NULL",
 		"ENGINE=InnoDB",
@@ -170,7 +170,7 @@ func TestGenerateMySQL(t *testing.T) {
 		"idx_events_aggregate",
 		"idx_events_event_type",
 		"idx_events_correlation",
-		"idx_projection_checkpoints_updated",
+		"idx_consumer_checkpoints_updated",
 	}
 
 	for _, idx := range requiredIndexes {
@@ -187,7 +187,7 @@ func TestGenerateSQLite(t *testing.T) {
 		OutputFolder:     tmpDir,
 		OutputFilename:   "test_migration.sql",
 		EventsTable:      "events",
-		CheckpointsTable: "projection_checkpoints",
+		CheckpointsTable: "consumer_checkpoints",
 	}
 
 	err := GenerateSQLite(&config)
@@ -220,8 +220,8 @@ func TestGenerateSQLite(t *testing.T) {
 		"causation_id TEXT",
 		"metadata TEXT",
 		"created_at TEXT NOT NULL",
-		"CREATE TABLE IF NOT EXISTS projection_checkpoints",
-		"projection_name TEXT PRIMARY KEY",
+		"CREATE TABLE IF NOT EXISTS consumer_checkpoints",
+		"consumer_name TEXT PRIMARY KEY",
 		"last_global_position INTEGER NOT NULL",
 		"updated_at TEXT NOT NULL",
 	}
@@ -237,7 +237,7 @@ func TestGenerateSQLite(t *testing.T) {
 		"idx_events_aggregate",
 		"idx_events_event_type",
 		"idx_events_correlation",
-		"idx_projection_checkpoints_updated",
+		"idx_consumer_checkpoints_updated",
 	}
 
 	for _, idx := range requiredIndexes {

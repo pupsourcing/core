@@ -26,7 +26,7 @@ import (
 
 	"github.com/getpup/pupsourcing/es"
 	"github.com/getpup/pupsourcing/es/adapters/postgres"
-	"github.com/getpup/pupsourcing/es/projection"
+	"github.com/getpup/pupsourcing/es/consumer"
 )
 
 // UserCreated event
@@ -122,7 +122,7 @@ func main() {
 	proj := &ScalableProjection{workerID: *workerID}
 
 	// Configure with partition info
-	config := projection.DefaultProcessorConfig()
+	config := consumer.DefaultProcessorConfig()
 	config.PartitionKey = *workerID
 	config.TotalPartitions = *totalWorkers
 

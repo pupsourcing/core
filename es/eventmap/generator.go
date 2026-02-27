@@ -515,7 +515,7 @@ func FromESEvents[T any](events []es.PersistedEvent) ([]T, error) {
 }
 
 // FromESEvent converts a single persisted event to a domain event.
-// This is useful for projection handlers that need to convert individual events.
+// This is useful for consumer handlers that need to convert individual events.
 func FromESEvent(pe es.PersistedEvent) (any, error) {
 	switch pe.EventType {
 `)

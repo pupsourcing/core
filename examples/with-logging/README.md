@@ -53,13 +53,13 @@ go run main.go
 ✓ Aggregate is now at version: 2
 
 --- Running Projection with Logging ---
-[INFO] [Projection] starting projection projection_name=user_list_with_logging
-[DEBUG] [Projection] loading checkpoint projection_name=user_list_with_logging
+[INFO] [Projection] starting projection consumer_name=user_list_with_logging
+[DEBUG] [Projection] loading checkpoint consumer_name=user_list_with_logging
 [DEBUG] [Projection] reading events from_position=0 batch_size=100
-[INFO] [Projection] processing batch projection_name=user_list_with_logging event_count=2
+[INFO] [Projection] processing batch consumer_name=user_list_with_logging event_count=2
 ✓ Projection processed: User created - Alice Smith (alice@example.com)
 ✓ Projection processed: User created - Bob Jones (bob@example.com)
-[DEBUG] [Projection] saving checkpoint projection_name=user_list_with_logging position=2
+[DEBUG] [Projection] saving checkpoint consumer_name=user_list_with_logging position=2
 
 ✓ Projection result - Users: [alice@example.com bob@example.com]
 
@@ -121,7 +121,7 @@ The event store logs:
 Pass your logger to the processor configuration:
 
 ```go
-processorConfig := projection.DefaultProcessorConfig()
+processorConfig := consumer.DefaultProcessorConfig()
 processorConfig.Logger = projectionLogger
 processor := postgres.NewProcessor(db, store, &processorConfig)
 ```
@@ -268,16 +268,16 @@ These are passed as variadic arguments and should be processed in pairs:
 
 ### Projection Processing
 ```
-[INFO] starting projection projection_name=user_counter
-[DEBUG] loading checkpoint projection_name=user_counter
-[INFO] processing batch projection_name=user_counter event_count=100
-[DEBUG] saving checkpoint projection_name=user_counter position=150
+[INFO] starting projection consumer_name=user_counter
+[DEBUG] loading checkpoint consumer_name=user_counter
+[INFO] processing batch consumer_name=user_counter event_count=100
+[DEBUG] saving checkpoint consumer_name=user_counter position=150
 ```
 
 ### Error Scenarios
 ```
 [ERROR] failed to append events error="optimistic concurrency violation"
-[ERROR] projection handler failed projection_name=user_counter event_id=123 error="..."
+[ERROR] projection handler failed consumer_name=user_counter event_id=123 error="..."
 ```
 
 ## Next Steps

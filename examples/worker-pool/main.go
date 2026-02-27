@@ -24,11 +24,11 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
-	"github.com/getpup/pupsourcing/es/projection"
+	"github.com/getpup/pupsourcing/es/consumer"
 
 	"github.com/getpup/pupsourcing/es"
 	"github.com/getpup/pupsourcing/es/adapters/postgres"
-	"github.com/getpup/pupsourcing/es/projection/runner"
+	"github.com/getpup/pupsourcing/es/consumer/runner"
 )
 
 // UserCreated event
@@ -120,15 +120,15 @@ func main() {
 	log.Println("Press Ctrl+C to stop")
 
 	// Create runners for each partition
-	var runners []runner.ProjectionRunner
+	var runners []runner.ConsumerRunner
 	for i := 0; i < *numWorkers; i++ {
-		config := projection.DefaultProcessorConfig()
+		config := consumer.DefaultProcessorConfig()
 		config.PartitionKey = i
 		config.TotalPartitions = *numWorkers
 		processor := postgres.NewProcessor(db, store, &config)
-		runners = append(runners, runner.ProjectionRunner{
-			Projection: proj,
-			Processor:  processor,
+		runners = append(runners, runner.ConsumerRunner{
+			Consumer:  proj,
+			Processor: processor,
 		})
 	}
 

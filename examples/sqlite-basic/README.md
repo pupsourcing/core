@@ -117,7 +117,7 @@ config := migrations.Config{
     OutputFolder:        "/tmp",
     OutputFilename:      "init.sql",
     EventsTable:         "events",
-    CheckpointsTable:    "projection_checkpoints",
+    CheckpointsTable:    "consumer_checkpoints",
     AggregateHeadsTable: "aggregate_heads",
 }
 migrations.GenerateSQLite(&config)

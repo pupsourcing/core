@@ -28,8 +28,8 @@ import (
 
 	"github.com/getpup/pupsourcing/es"
 	"github.com/getpup/pupsourcing/es/adapters/postgres"
-	"github.com/getpup/pupsourcing/es/projection"
-	"github.com/getpup/pupsourcing/es/projection/runner"
+	"github.com/getpup/pupsourcing/es/consumer"
+	"github.com/getpup/pupsourcing/es/consumer/runner"
 )
 
 // UserCreated event
@@ -180,42 +180,42 @@ func main() {
 	watermillIntegration := &WatermillIntegrationProjection{}
 
 	// Configure each projection independently and create processors
-	var runners []runner.ProjectionRunner
+	var runners []runner.ConsumerRunner
 
-	config1 := projection.ProcessorConfig{
+	config1 := consumer.ProcessorConfig{
 		BatchSize:         100,
 		PartitionKey:      0,
 		TotalPartitions:   1,
-		PartitionStrategy: projection.HashPartitionStrategy{},
+		PartitionStrategy: consumer.HashPartitionStrategy{},
 	}
 	processor1 := postgres.NewProcessor(db, store, &config1)
-	runners = append(runners, runner.ProjectionRunner{
-		Projection: userReadModel, // Scoped projection - only receives User events
-		Processor:  processor1,
+	runners = append(runners, runner.ConsumerRunner{
+		Consumer:  userReadModel, // Scoped projection - only receives User events
+		Processor: processor1,
 	})
 
-	config2 := projection.ProcessorConfig{
+	config2 := consumer.ProcessorConfig{
 		BatchSize:         100,
 		PartitionKey:      0,
 		TotalPartitions:   1,
-		PartitionStrategy: projection.HashPartitionStrategy{},
+		PartitionStrategy: consumer.HashPartitionStrategy{},
 	}
 	processor2 := postgres.NewProcessor(db, store, &config2)
-	runners = append(runners, runner.ProjectionRunner{
-		Projection: orderReadModel, // Scoped projection - only receives Order events
-		Processor:  processor2,
+	runners = append(runners, runner.ConsumerRunner{
+		Consumer:  orderReadModel, // Scoped projection - only receives Order events
+		Processor: processor2,
 	})
 
-	config3 := projection.ProcessorConfig{
+	config3 := consumer.ProcessorConfig{
 		BatchSize:         100,
 		PartitionKey:      0,
 		TotalPartitions:   1,
-		PartitionStrategy: projection.HashPartitionStrategy{},
+		PartitionStrategy: consumer.HashPartitionStrategy{},
 	}
 	processor3 := postgres.NewProcessor(db, store, &config3)
-	runners = append(runners, runner.ProjectionRunner{
-		Projection: watermillIntegration, // Global projection - receives ALL events
-		Processor:  processor3,
+	runners = append(runners, runner.ConsumerRunner{
+		Consumer:  watermillIntegration, // Global projection - receives ALL events
+		Processor: processor3,
 	})
 
 	// Set up graceful shutdown

@@ -13,8 +13,8 @@ import (
 
 	"github.com/getpup/pupsourcing/es"
 	"github.com/getpup/pupsourcing/es/adapters/sqlite"
+	"github.com/getpup/pupsourcing/es/consumer"
 	"github.com/getpup/pupsourcing/es/migrations"
-	"github.com/getpup/pupsourcing/es/projection"
 )
 
 func TestProjection_OneOffMode(t *testing.T) {
@@ -57,8 +57,8 @@ func TestProjection_OneOffMode(t *testing.T) {
 
 	// Act: Process with one-off mode
 	proj := &UserProjection{}
-	config := projection.DefaultProcessorConfig()
-	config.RunMode = projection.RunModeOneOff
+	config := consumer.DefaultProcessorConfig()
+	config.RunMode = consumer.RunModeOneOff
 	config.BatchSize = 5 // Process in multiple batches
 
 	processor := sqlite.NewProcessor(db, store, &config)
@@ -109,8 +109,8 @@ func TestProjection_OneOffMode_EmptyStore(t *testing.T) {
 
 	// Process with one-off mode
 	proj := &UserProjection{}
-	config := projection.DefaultProcessorConfig()
-	config.RunMode = projection.RunModeOneOff
+	config := consumer.DefaultProcessorConfig()
+	config.RunMode = consumer.RunModeOneOff
 
 	processor := sqlite.NewProcessor(db, store, &config)
 
@@ -168,7 +168,7 @@ func TestProjection_ContinuousMode_StillWorks(t *testing.T) {
 
 	// Process with continuous mode (default)
 	proj := &UserProjection{}
-	config := projection.DefaultProcessorConfig()
+	config := consumer.DefaultProcessorConfig()
 	// RunMode defaults to RunModeContinuous
 
 	processor := sqlite.NewProcessor(db, store, &config)
@@ -216,7 +216,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 		OutputFolder:        tmpDir,
 		OutputFilename:      "test.sql",
 		EventsTable:         "events",
-		CheckpointsTable:    "projection_checkpoints",
+		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
 	}
 

@@ -6,7 +6,7 @@
 //   - Event: immutable domain events
 //   - DBTX: database transaction abstraction
 //   - EventStore: event persistence interface
-//   - Projection: event processing interface
+//   - Consumer: event processing interface
 //
 // # Design Philosophy
 //
@@ -62,9 +62,9 @@
 //
 //	tx.Commit()
 //
-// 5. Process events with projections:
+// 5. Process events with consumers:
 //
-//	import "github.com/getpup/pupsourcing/es/projection"
+//	import "github.com/getpup/pupsourcing/es/consumer"
 //
 //	type MyProjection struct {}
 //
@@ -75,8 +75,8 @@
 //	    return nil
 //	}
 //
-//	config := projection.DefaultProcessorConfig()
-//	processor := projection.NewProcessor(db, store, &config)
+//	config := consumer.DefaultProcessorConfig()
+//	processor := consumer.NewProcessor(db, store, &config)
 //	processor.Run(ctx, &MyProjection{})
 //
 // # Optimistic Concurrency
@@ -89,15 +89,15 @@
 //
 // This prevents race conditions when multiple processes modify the same aggregate.
 //
-// # Projections
+// # Consumers
 //
-// Projections process events sequentially and track their progress via checkpoints.
+// Consumers process events sequentially and track their progress via checkpoints.
 // They can be:
 //   - Long-running (endless processing with context cancellation)
 //   - Horizontally scaled (via deterministic hash partitioning)
 //   - Resumed after failure (from last checkpoint)
 //
-// See the projection package for details.
+// See the consumer package for details.
 //
 // # Database Schema
 //
@@ -110,7 +110,7 @@
 //   - trace_id, correlation_id, causation_id: for distributed tracing
 //   - metadata: JSONB for additional context
 //
-// Checkpoints are stored separately per projection.
+// Checkpoints are stored separately per consumer.
 //
 // # Design Decisions
 //
@@ -120,7 +120,7 @@
 // DBTX interface: Works with *sql.DB and *sql.Tx. No transaction management
 // in the library keeps it focused on event sourcing.
 //
-// Pull-based projections: Projections read events in batches. This is simpler
+// Pull-based consumers: Consumers read events in batches. This is simpler
 // than push-based and works well with checkpoint-based resumption.
 //
 // Hash-based partitioning: Events for the same aggregate go to the same

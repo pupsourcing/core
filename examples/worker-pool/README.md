@@ -114,14 +114,14 @@ go run main.go --workers=4
 ### Programmatically
 ```go
 // Create runners for each partition
-var runners []runner.ProjectionRunner
+var runners []runner.ConsumerRunner
 for i := 0; i < numWorkers; i++ {
-    config := projection.DefaultProcessorConfig()
+    config := consumer.DefaultProcessorConfig()
     config.PartitionKey = i
     config.TotalPartitions = numWorkers
     processor := postgres.NewProcessor(db, store, &config)
-    runners = append(runners, runner.ProjectionRunner{
-        Projection: proj,
+    runners = append(runners, runner.ConsumerRunner{
+        Consumer: proj,
         Processor:  processor,
     })
 }
@@ -152,13 +152,13 @@ For more control, configure workers manually:
 ```go
 configs := make([]runner.ProjectionConfig, numWorkers)
 for i := 0; i < numWorkers; i++ {
-    config := projection.DefaultProcessorConfig()
+    config := consumer.DefaultProcessorConfig()
     config.PartitionKey = i
     config.TotalPartitions = numWorkers
     config.BatchSize = 100  // Customize per worker if needed
     
     configs[i] = runner.ProjectionConfig{
-        Projection:      projection,
+        Consumer:      projection,
         ProcessorConfig: config,
     }
 }
