@@ -17,9 +17,9 @@ import (
 	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
 
-	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/adapters/sqlite"
-	"github.com/getpup/pupsourcing/es/migrations"
+	"github.com/pupsourcing/core/es"
+	"github.com/pupsourcing/core/es/adapters/sqlite"
+	"github.com/pupsourcing/core/es/migrations"
 )
 
 // UserCreated is a sample event payload

@@ -77,7 +77,7 @@ Event 2: UserEmailChanged (version: 2)
 The example uses the MySQL-specific adapter:
 
 ```go
-import "github.com/getpup/pupsourcing/es/adapters/mysql"
+import "github.com/pupsourcing/core/es/adapters/mysql"
 
 store := mysql.NewStore(mysql.DefaultStoreConfig())
 ```
@@ -87,7 +87,7 @@ store := mysql.NewStore(mysql.DefaultStoreConfig())
 The example programmatically generates and applies migrations:
 
 ```go
-import "github.com/getpup/pupsourcing/es/migrations"
+import "github.com/pupsourcing/core/es/migrations"
 
 // Generate migration
 config := migrations.Config{

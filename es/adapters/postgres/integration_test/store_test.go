@@ -15,11 +15,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/adapters/postgres"
-	"github.com/getpup/pupsourcing/es/migrations"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
+	"github.com/pupsourcing/core/es"
+	"github.com/pupsourcing/core/es/adapters/postgres"
+	"github.com/pupsourcing/core/es/migrations"
 )
 
 func getTestDB(t *testing.T) *sql.DB {

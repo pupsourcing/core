@@ -54,7 +54,7 @@ cockroach sql --insecure -e "CREATE DATABASE pupsourcing"
 
 2. Generate the database schema:
 ```bash
-go run github.com/getpup/pupsourcing/cmd/migrate-gen -output migrations
+go run github.com/pupsourcing/core/cmd/migrate-gen -output migrations
 ```
 
 3. Apply the migration:

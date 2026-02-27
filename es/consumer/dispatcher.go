@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/store"
+	"github.com/pupsourcing/core/es"
+	"github.com/pupsourcing/core/es/store"
 )
 
 // DispatcherConfig configures the dispatcher polling loop.

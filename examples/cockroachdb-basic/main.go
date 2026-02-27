@@ -12,10 +12,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/adapters/postgres"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
+	"github.com/pupsourcing/core/es"
+	"github.com/pupsourcing/core/es/adapters/postgres"
 )
 
 const (

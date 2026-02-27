@@ -100,7 +100,7 @@ go test -p 1 -v -tags=integration ./es/adapters/postgres/integration_test/... ./
 - **Workflow**: Always run the linter after making code changes, and use `--fix` to resolve fixable issues efficiently
 - **MANDATORY**: After fixing any linting issues, **ALWAYS** run the linter globally (`golangci-lint run --timeout=5m`) to ensure no new issues were introduced elsewhere
 - **Enabled Linters**: gocritic, gocyclo, gosec, misspell, revive
-- **Formatters**: gofmt, goimports (with local prefix `github.com/getpup/pupsourcing`)
+- **Formatters**: gofmt, goimports (with local prefix `github.com/pupsourcing/core`)
 - **Complexity**: Maximum cyclomatic complexity of 15
 - **Line Length**: 120 characters max
 - **Exclusions**: Test files, examples, and third-party code have relaxed rules
@@ -118,19 +118,19 @@ go mod download
 go mod verify
 
 # Generate migrations
-go run github.com/getpup/pupsourcing/cmd/migrate-gen -output migrations
+go run github.com/pupsourcing/core/cmd/migrate-gen -output migrations
 ```
 
 ### Migration Generation
 
 Use the `migrate-gen` tool to create database migrations:
 ```bash
-go run github.com/getpup/pupsourcing/cmd/migrate-gen -output migrations
+go run github.com/pupsourcing/core/cmd/migrate-gen -output migrations
 ```
 
 Or add to your code:
 ```go
-//go:generate go run github.com/getpup/pupsourcing/cmd/migrate-gen -output migrations
+//go:generate go run github.com/pupsourcing/core/cmd/migrate-gen -output migrations
 ```
 
 This generates:

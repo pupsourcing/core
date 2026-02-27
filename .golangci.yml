@@ -55,7 +55,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/getpup/pupsourcing
+        - github.com/pupsourcing/core
   exclusions:
     generated: lax
     paths:

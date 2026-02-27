@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/getpup/pupsourcing/es"
+	"github.com/pupsourcing/core/es"
 )
 
 type fakeGlobalPositionReader struct {

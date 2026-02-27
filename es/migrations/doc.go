@@ -2,11 +2,11 @@
 //
 // To generate migrations, use the migrate-gen command:
 //
-//	go run github.com/getpup/pupsourcing/cmd/migrate-gen -output migrations
+//	go run github.com/pupsourcing/core/cmd/migrate-gen -output migrations
 //
 // Or add a go generate directive to your code:
 //
-//	//go:generate go run github.com/getpup/pupsourcing/cmd/migrate-gen -output ../../migrations
+//	//go:generate go run github.com/pupsourcing/core/cmd/migrate-gen -output ../../migrations
 //
 // Then run:
 //

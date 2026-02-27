@@ -22,9 +22,9 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
-	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/adapters/postgres"
-	"github.com/getpup/pupsourcing/es/consumer"
+	"github.com/pupsourcing/core/es"
+	"github.com/pupsourcing/core/es/adapters/postgres"
+	"github.com/pupsourcing/core/es/consumer"
 )
 
 // UserCreated is a sample event payload

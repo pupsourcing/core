@@ -36,7 +36,7 @@ lint: ## Run linter
 
 fmt: ## Format code
 	gofmt -w -s .
-	goimports -w -local github.com/getpup/pupsourcing .
+	goimports -w -local github.com/pupsourcing/core .
 
 build: ## Build all packages
 	go build -v ./...

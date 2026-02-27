@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getpup/pupsourcing/es"
 	"github.com/google/uuid"
+	"github.com/pupsourcing/core/es"
 
-	v1 "github.com/getpup/pupsourcing/examples/eventmap-codegen/domain/user/events/v1"
-	v2 "github.com/getpup/pupsourcing/examples/eventmap-codegen/domain/user/events/v2"
+	v1 "github.com/pupsourcing/core/examples/eventmap-codegen/domain/user/events/v1"
+	v2 "github.com/pupsourcing/core/examples/eventmap-codegen/domain/user/events/v2"
 )
 
 // TestEventTypeOf tests the EventTypeOf function.

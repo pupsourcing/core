@@ -17,11 +17,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/adapters/mysql"
-	"github.com/getpup/pupsourcing/es/migrations"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
+	"github.com/pupsourcing/core/es"
+	"github.com/pupsourcing/core/es/adapters/mysql"
+	"github.com/pupsourcing/core/es/migrations"
 )
 
 func getTestDB(t *testing.T) *sql.DB {

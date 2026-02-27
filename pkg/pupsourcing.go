@@ -12,7 +12,7 @@
 // Quick Start:
 //
 //  1. Generate migrations:
-//     go run github.com/getpup/pupsourcing/cmd/migrate-gen -output migrations
+//     go run github.com/pupsourcing/core/cmd/migrate-gen -output migrations
 //
 //  2. Create store and append events:
 //     store := postgres.NewStore(postgres.DefaultStoreConfig())

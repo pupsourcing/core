@@ -2,17 +2,17 @@
 //
 // Usage:
 //
-//	go run github.com/getpup/pupsourcing/cmd/migrate-gen -output migrations -filename init.sql
+//	go run github.com/pupsourcing/core/cmd/migrate-gen -output migrations -filename init.sql
 //
 // Or with go generate:
 //
-//	//go:generate go run github.com/getpup/pupsourcing/cmd/migrate-gen -output migrations
+//	//go:generate go run github.com/pupsourcing/core/cmd/migrate-gen -output migrations
 //
 // Generate migrations for different database adapters:
 //
-//	go run github.com/getpup/pupsourcing/cmd/migrate-gen -adapter postgres -output migrations
-//	go run github.com/getpup/pupsourcing/cmd/migrate-gen -adapter mysql -output migrations
-//	go run github.com/getpup/pupsourcing/cmd/migrate-gen -adapter sqlite -output migrations
+//	go run github.com/pupsourcing/core/cmd/migrate-gen -adapter postgres -output migrations
+//	go run github.com/pupsourcing/core/cmd/migrate-gen -adapter mysql -output migrations
+//	go run github.com/pupsourcing/core/cmd/migrate-gen -adapter sqlite -output migrations
 package main
 
 import (
@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/getpup/pupsourcing/es/migrations"
+	"github.com/pupsourcing/core/es/migrations"
 )
 
 func main() {

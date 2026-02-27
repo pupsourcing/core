@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/getpup/pupsourcing/es"
+	"github.com/pupsourcing/core/es"
 )
 
 // mockGlobalConsumer is a consumer that receives all events

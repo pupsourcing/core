@@ -315,7 +315,7 @@ func (g *Generator) generateImports() string {
 	sb.WriteString("\t\"time\"\n")
 	sb.WriteString("\n")
 	sb.WriteString("\t\"github.com/google/uuid\"\n")
-	sb.WriteString("\t\"github.com/getpup/pupsourcing/es\"\n")
+	sb.WriteString("\t\"github.com/pupsourcing/core/es\"\n")
 
 	// Add imports for domain event packages
 	importPaths := make(map[string]string)
@@ -659,7 +659,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/getpup/pupsourcing/es"
+	"github.com/pupsourcing/core/es"
 `, g.config.PackageName))
 
 	// Add imports for domain event packages

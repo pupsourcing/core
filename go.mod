@@ -1,4 +1,4 @@
-module github.com/getpup/pupsourcing
+module github.com/pupsourcing/core
 
 go 1.24.11
 

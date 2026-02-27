@@ -86,7 +86,7 @@ SELECT * FROM aggregate_heads;
 The example uses the SQLite-specific adapter:
 
 ```go
-import "github.com/getpup/pupsourcing/es/adapters/sqlite"
+import "github.com/pupsourcing/core/es/adapters/sqlite"
 import _ "modernc.org/sqlite"  // Pure Go SQLite driver
 
 db, _ := sql.Open("sqlite", "pupsourcing_example.db")
@@ -111,7 +111,7 @@ This allows:
 Migrations are generated and applied programmatically:
 
 ```go
-import "github.com/getpup/pupsourcing/es/migrations"
+import "github.com/pupsourcing/core/es/migrations"
 
 config := migrations.Config{
     OutputFolder:        "/tmp",

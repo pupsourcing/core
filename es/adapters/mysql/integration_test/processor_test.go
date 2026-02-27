@@ -18,10 +18,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/adapters/mysql"
-	"github.com/getpup/pupsourcing/es/consumer"
 	"github.com/google/uuid"
+	"github.com/pupsourcing/core/es"
+	"github.com/pupsourcing/core/es/adapters/mysql"
+	"github.com/pupsourcing/core/es/consumer"
 )
 
 // testConsumer is a simple consumer for testing

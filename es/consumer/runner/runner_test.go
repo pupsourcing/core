@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/consumer"
+	"github.com/pupsourcing/core/es"
+	"github.com/pupsourcing/core/es/consumer"
 )
 
 // mockConsumer implements consumer.Consumer for testing

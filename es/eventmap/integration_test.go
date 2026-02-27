@@ -79,10 +79,10 @@ go 1.24
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/getpup/pupsourcing v0.0.0
+	github.com/pupsourcing/core v0.0.0
 )
 
-replace github.com/getpup/pupsourcing => ` + repoRoot + `
+replace github.com/pupsourcing/core => ` + repoRoot + `
 `
 	if err = os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0o644); err != nil {
 		t.Fatalf("Failed to write go.mod: %v", err)
@@ -103,7 +103,7 @@ replace github.com/getpup/pupsourcing => ` + repoRoot + `
 	}
 
 	// Run the eventmap-gen tool
-	cmd := exec.Command("go", "run", "github.com/getpup/pupsourcing/cmd/eventmap-gen",
+	cmd := exec.Command("go", "run", "github.com/pupsourcing/core/cmd/eventmap-gen",
 		"-input", eventsDir,
 		"-output", outputDir,
 		"-package", "generated",
@@ -129,7 +129,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/getpup/pupsourcing/es"
+	"github.com/pupsourcing/core/es"
 	"testevents/events/v1"
 	"testevents/events/v2"
 )

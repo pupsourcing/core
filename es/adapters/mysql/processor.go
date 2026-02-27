@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/consumer"
+	"github.com/pupsourcing/core/es"
+	"github.com/pupsourcing/core/es/consumer"
 )
 
 var (

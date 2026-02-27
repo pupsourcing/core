@@ -11,10 +11,10 @@ import (
 	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
 
-	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/adapters/sqlite"
-	"github.com/getpup/pupsourcing/es/consumer"
-	"github.com/getpup/pupsourcing/es/migrations"
+	"github.com/pupsourcing/core/es"
+	"github.com/pupsourcing/core/es/adapters/sqlite"
+	"github.com/pupsourcing/core/es/consumer"
+	"github.com/pupsourcing/core/es/migrations"
 )
 
 // UserProjection is a simple projection that counts user events

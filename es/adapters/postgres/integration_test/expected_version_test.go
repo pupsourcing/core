@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/adapters/postgres"
-	"github.com/getpup/pupsourcing/es/store"
 	"github.com/google/uuid"
+	"github.com/pupsourcing/core/es"
+	"github.com/pupsourcing/core/es/adapters/postgres"
+	"github.com/pupsourcing/core/es/store"
 )
 
 // TestExpectedVersion_NoStream tests that NoStream() enforces aggregate doesn't exist
@@ -28,13 +28,13 @@ func TestExpectedVersion_NoStream(t *testing.T) {
 	event := es.Event{
 		BoundedContext: "TestContext",
 		AggregateType:  "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventCreated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		AggregateID:    aggregateID,
+		EventID:        uuid.New(),
+		EventType:      "TestEventCreated",
+		EventVersion:   1,
+		Payload:        []byte(`{}`),
+		Metadata:       []byte(`{}`),
+		CreatedAt:      time.Now(),
 	}
 
 	// First append with NoStream() should succeed
@@ -76,13 +76,13 @@ func TestExpectedVersion_Exact(t *testing.T) {
 	event1 := es.Event{
 		BoundedContext: "TestContext",
 		AggregateType:  "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventCreated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		AggregateID:    aggregateID,
+		EventID:        uuid.New(),
+		EventType:      "TestEventCreated",
+		EventVersion:   1,
+		Payload:        []byte(`{}`),
+		Metadata:       []byte(`{}`),
+		CreatedAt:      time.Now(),
 	}
 
 	tx1, _ := db.BeginTx(ctx, nil)
@@ -98,13 +98,13 @@ func TestExpectedVersion_Exact(t *testing.T) {
 	event2 := es.Event{
 		BoundedContext: "TestContext",
 		AggregateType:  "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventUpdated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		AggregateID:    aggregateID,
+		EventID:        uuid.New(),
+		EventType:      "TestEventUpdated",
+		EventVersion:   1,
+		Payload:        []byte(`{}`),
+		Metadata:       []byte(`{}`),
+		CreatedAt:      time.Now(),
 	}
 
 	tx2, _ := db.BeginTx(ctx, nil)
@@ -120,13 +120,13 @@ func TestExpectedVersion_Exact(t *testing.T) {
 	event3 := es.Event{
 		BoundedContext: "TestContext",
 		AggregateType:  "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventUpdated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		AggregateID:    aggregateID,
+		EventID:        uuid.New(),
+		EventType:      "TestEventUpdated",
+		EventVersion:   1,
+		Payload:        []byte(`{}`),
+		Metadata:       []byte(`{}`),
+		CreatedAt:      time.Now(),
 	}
 
 	tx3, _ := db.BeginTx(ctx, nil)
@@ -162,13 +162,13 @@ func TestExpectedVersion_Exact_NonExistent(t *testing.T) {
 	event := es.Event{
 		BoundedContext: "TestContext",
 		AggregateType:  "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventCreated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		AggregateID:    aggregateID,
+		EventID:        uuid.New(),
+		EventType:      "TestEventCreated",
+		EventVersion:   1,
+		Payload:        []byte(`{}`),
+		Metadata:       []byte(`{}`),
+		CreatedAt:      time.Now(),
 	}
 
 	// Append with Exact(1) should fail (aggregate doesn't exist)
@@ -195,13 +195,13 @@ func TestExpectedVersion_Exact_Zero(t *testing.T) {
 	event := es.Event{
 		BoundedContext: "TestContext",
 		AggregateType:  "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventCreated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		AggregateID:    aggregateID,
+		EventID:        uuid.New(),
+		EventType:      "TestEventCreated",
+		EventVersion:   1,
+		Payload:        []byte(`{}`),
+		Metadata:       []byte(`{}`),
+		CreatedAt:      time.Now(),
 	}
 
 	// Append with Exact(0) should succeed when aggregate is at version 0 (new aggregate)
@@ -248,13 +248,13 @@ func TestExpectedVersion_Any(t *testing.T) {
 	event1 := es.Event{
 		BoundedContext: "TestContext",
 		AggregateType:  "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventCreated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		AggregateID:    aggregateID,
+		EventID:        uuid.New(),
+		EventType:      "TestEventCreated",
+		EventVersion:   1,
+		Payload:        []byte(`{}`),
+		Metadata:       []byte(`{}`),
+		CreatedAt:      time.Now(),
 	}
 
 	tx1, _ := db.BeginTx(ctx, nil)
@@ -270,13 +270,13 @@ func TestExpectedVersion_Any(t *testing.T) {
 	event2 := es.Event{
 		BoundedContext: "TestContext",
 		AggregateType:  "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventUpdated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		AggregateID:    aggregateID,
+		EventID:        uuid.New(),
+		EventType:      "TestEventUpdated",
+		EventVersion:   1,
+		Payload:        []byte(`{}`),
+		Metadata:       []byte(`{}`),
+		CreatedAt:      time.Now(),
 	}
 
 	tx2, _ := db.BeginTx(ctx, nil)
@@ -305,13 +305,13 @@ func TestExpectedVersion_UniquenessPattern(t *testing.T) {
 	event := es.Event{
 		BoundedContext: "TestContext",
 		AggregateType:  "EmailReservation",
-		AggregateID:   email,
-		EventID:       uuid.New(),
-		EventType:     "EmailReserved",
-		EventVersion:  1,
-		Payload:       []byte(`{"email":"user@example.com"}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		AggregateID:    email,
+		EventID:        uuid.New(),
+		EventType:      "EmailReserved",
+		EventVersion:   1,
+		Payload:        []byte(`{"email":"user@example.com"}`),
+		Metadata:       []byte(`{}`),
+		CreatedAt:      time.Now(),
 	}
 
 	// First reservation should succeed

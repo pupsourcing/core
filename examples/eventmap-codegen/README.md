@@ -30,7 +30,7 @@ go run ./cmd/eventmap-gen \
   -input ./examples/eventmap-codegen/domain/user/events \
   -output ./examples/eventmap-codegen/infrastructure/persistence \
   -package persistence \
-  -module github.com/getpup/pupsourcing/examples/eventmap-codegen/domain/user/events
+  -module github.com/pupsourcing/core/examples/eventmap-codegen/domain/user/events
 ```
 
 This will create `event_mapping.gen.go` in the infrastructure/persistence directory.

@@ -7,7 +7,7 @@ import (
 	"hash/fnv"
 	"time"
 
-	"github.com/getpup/pupsourcing/es"
+	"github.com/pupsourcing/core/es"
 )
 
 // Consumer defines the interface for event consumer handlers.

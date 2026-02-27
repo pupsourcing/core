@@ -19,9 +19,9 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 
-	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/adapters/mysql"
-	"github.com/getpup/pupsourcing/es/migrations"
+	"github.com/pupsourcing/core/es"
+	"github.com/pupsourcing/core/es/adapters/mysql"
+	"github.com/pupsourcing/core/es/migrations"
 )
 
 // UserCreated is a sample event payload

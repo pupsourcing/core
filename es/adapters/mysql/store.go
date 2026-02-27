@@ -10,8 +10,8 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 
-	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/store"
+	"github.com/pupsourcing/core/es"
+	"github.com/pupsourcing/core/es/store"
 )
 
 // StoreConfig contains configuration for the MySQL event store.

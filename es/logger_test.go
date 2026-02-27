@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/getpup/pupsourcing/es"
+	"github.com/pupsourcing/core/es"
 )
 
 // TestNoOpLogger verifies the NoOpLogger doesn't panic.

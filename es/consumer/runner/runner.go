@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/getpup/pupsourcing/es/consumer"
+	"github.com/pupsourcing/core/es/consumer"
 )
 
 var (

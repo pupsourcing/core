@@ -1,8 +1,8 @@
 # pupsourcing
 
-[![CI](https://github.com/getpup/pupsourcing/actions/workflows/ci.yml/badge.svg)](https://github.com/getpup/pupsourcing/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/getpup/pupsourcing)](https://goreportcard.com/report/github.com/getpup/pupsourcing)
-[![GoDoc](https://godoc.org/github.com/getpup/pupsourcing?status.svg)](https://godoc.org/github.com/getpup/pupsourcing)
+[![CI](https://github.com/pupsourcing/core/actions/workflows/ci.yml/badge.svg)](https://github.com/pupsourcing/core/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/pupsourcing/core)](https://goreportcard.com/report/github.com/pupsourcing/core)
+[![GoDoc](https://godoc.org/github.com/pupsourcing/core?status.svg)](https://godoc.org/github.com/pupsourcing/core)
 
 <div>
 <img width="300" height="300" alt="response" src="https://github.com/user-attachments/assets/113ffeea-b8e3-497a-b0df-3ef903a70540" align="center" />
@@ -28,7 +28,7 @@ pupsourcing provides minimal, reliable infrastructure for event sourcing in Go a
 ## Installation
 
 ```bash
-go get github.com/getpup/pupsourcing
+go get github.com/pupsourcing/core
 ```
 
 Choose your database driver:
@@ -48,7 +48,7 @@ go get github.com/go-sql-driver/mysql
 ### 1. Generate Database Schema
 
 ```bash
-go run github.com/getpup/pupsourcing/cmd/migrate-gen -output migrations
+go run github.com/pupsourcing/core/cmd/migrate-gen -output migrations
 ```
 
 Apply the generated migrations using your preferred migration tool.
@@ -58,7 +58,7 @@ Apply the generated migrations using your preferred migration tool.
 If you want type-safe mapping between domain events and event sourcing types:
 
 ```bash
-go run github.com/getpup/pupsourcing/cmd/eventmap-gen \
+go run github.com/pupsourcing/core/cmd/eventmap-gen \
   -input internal/domain/events \
   -output internal/infrastructure/generated
 ```
@@ -69,8 +69,8 @@ See [Event Mapping Documentation](https://pupsourcing.gopup.dev/eventmap-gen) fo
 
 ```go
 import (
-    "github.com/getpup/pupsourcing/es"
-    "github.com/getpup/pupsourcing/es/adapters/postgres"
+    "github.com/pupsourcing/core/es"
+    "github.com/pupsourcing/core/es/adapters/postgres"
     "github.com/google/uuid"
 )
 
@@ -133,7 +133,7 @@ for _, event := range stream.Events {
 Consumers process events from the event store. Use **scoped consumers** for read models that only care about specific aggregate types and/or bounded contexts, or **global consumers** for integration publishers that need all events.
 
 ```go
-import "github.com/getpup/pupsourcing/es/consumer"
+import "github.com/pupsourcing/core/es/consumer"
 
 // Scoped projection - only receives User aggregate events from Identity context
 type UserReadModelProjection struct{}

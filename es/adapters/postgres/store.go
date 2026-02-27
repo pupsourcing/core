@@ -7,8 +7,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/store"
+	"github.com/pupsourcing/core/es"
+	"github.com/pupsourcing/core/es/store"
 )
 
 // StoreConfig contains configuration for the Postgres event store.

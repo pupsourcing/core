@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/adapters/sqlite"
-	"github.com/getpup/pupsourcing/es/migrations"
 	"github.com/google/uuid"
+	"github.com/pupsourcing/core/es"
+	"github.com/pupsourcing/core/es/adapters/sqlite"
+	"github.com/pupsourcing/core/es/migrations"
 	_ "modernc.org/sqlite"
 )
 

@@ -24,15 +24,15 @@
 //
 // 1. Generate database migrations:
 //
-//	go run github.com/getpup/pupsourcing/cmd/migrate-gen -output migrations
+//	go run github.com/pupsourcing/core/cmd/migrate-gen -output migrations
 //
 // 2. Apply migrations to your database
 //
 // 3. Create an event store:
 //
 //	import (
-//	    "github.com/getpup/pupsourcing/es"
-//	    "github.com/getpup/pupsourcing/es/adapters/postgres"
+//	    "github.com/pupsourcing/core/es"
+//	    "github.com/pupsourcing/core/es/adapters/postgres"
 //	)
 //
 //	store := postgres.NewStore(postgres.DefaultStoreConfig())
@@ -64,7 +64,7 @@
 //
 // 5. Process events with consumers:
 //
-//	import "github.com/getpup/pupsourcing/es/consumer"
+//	import "github.com/pupsourcing/core/es/consumer"
 //
 //	type MyProjection struct {}
 //

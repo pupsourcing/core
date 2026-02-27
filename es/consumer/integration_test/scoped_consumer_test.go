@@ -16,10 +16,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getpup/pupsourcing/es"
-	"github.com/getpup/pupsourcing/es/adapters/postgres"
-	"github.com/getpup/pupsourcing/es/consumer"
 	"github.com/google/uuid"
+	"github.com/pupsourcing/core/es"
+	"github.com/pupsourcing/core/es/adapters/postgres"
+	"github.com/pupsourcing/core/es/consumer"
 )
 
 // globalConsumer receives all events

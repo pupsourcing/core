@@ -2,7 +2,7 @@
 //
 // Usage:
 //
-//	go run github.com/getpup/pupsourcing/cmd/eventmap-gen \
+//	go run github.com/pupsourcing/core/cmd/eventmap-gen \
 //	  -input internal/core/component/user/domain/user/events \
 //	  -output internal/infrastructure/component/user/persistence/es/generated
 //
@@ -48,7 +48,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/getpup/pupsourcing/es/eventmap"
+	"github.com/pupsourcing/core/es/eventmap"
 )
 
 func main() {

@@ -13,7 +13,7 @@ func TestGenerator_Discover(t *testing.T) {
 		OutputDir:   "testdata/output",
 		OutputFile:  "event_mapping.gen.go",
 		PackageName: "generated",
-		ModulePath:  "github.com/getpup/pupsourcing/es/eventmap/testdata/events",
+		ModulePath:  "github.com/pupsourcing/core/es/eventmap/testdata/events",
 	}
 
 	gen := NewGenerator(&config)
@@ -105,7 +105,7 @@ func TestGenerator_Generate(t *testing.T) {
 		OutputDir:   tmpDir,
 		OutputFile:  "event_mapping.gen.go",
 		PackageName: "generated",
-		ModulePath:  "github.com/getpup/pupsourcing/es/eventmap/testdata/events",
+		ModulePath:  "github.com/pupsourcing/core/es/eventmap/testdata/events",
 	}
 
 	gen := NewGenerator(&config)
@@ -168,7 +168,7 @@ func TestGenerator_Generate(t *testing.T) {
 	requiredImports := []string{
 		`"encoding/json"`,
 		`"github.com/google/uuid"`,
-		`"github.com/getpup/pupsourcing/es"`,
+		`"github.com/pupsourcing/core/es"`,
 	}
 
 	for _, imp := range requiredImports {

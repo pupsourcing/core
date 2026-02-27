@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/getpup/pupsourcing/es"
+	"github.com/pupsourcing/core/es"
 )
 
 var (
