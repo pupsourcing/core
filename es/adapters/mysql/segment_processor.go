@@ -413,8 +413,8 @@ func (p *SegmentProcessor) startSegmentWorker(ctx context.Context, cons consumer
 		delete(workers, segmentID)
 		workersMu.Unlock()
 
-		// Report error to main loop
-		if err != nil {
+		// Report error to main loop (context cancellation is expected during rebalance/shutdown)
+		if err != nil && !errors.Is(err, context.Canceled) {
 			select {
 			case workerErrCh <- err:
 			default:
