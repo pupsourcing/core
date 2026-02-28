@@ -560,7 +560,7 @@ func TestSegmentProcessor_OneOff(t *testing.T) {
 	config.TotalSegments = totalSegments
 	config.BatchSize = 5 // Process in multiple batches
 
-	processor := postgres.NewSegmentProcessor(db, store, &config)
+	processor := postgres.NewSegmentProcessor(db, store, config)
 
 	t.Run("one-off mode processes all events exactly once", func(t *testing.T) {
 		err := processor.Run(ctx, cons)
@@ -632,7 +632,7 @@ func TestSegmentProcessor_OneOff(t *testing.T) {
 			},
 		}
 
-		processor2 := postgres.NewSegmentProcessor(db, store, &config)
+		processor2 := postgres.NewSegmentProcessor(db, store, config)
 		err := processor2.Run(ctx, cons2)
 		if err != nil {
 			t.Fatalf("Second run failed: %v", err)
@@ -711,7 +711,7 @@ func TestSegmentProcessor_OneOff_EventDistribution(t *testing.T) {
 	config.TotalSegments = totalSegments
 	config.BatchSize = 4
 
-	processor := postgres.NewSegmentProcessor(db, store, &config)
+	processor := postgres.NewSegmentProcessor(db, store, config)
 
 	t.Run("all events processed across segments", func(t *testing.T) {
 		err := processor.Run(ctx, cons)
@@ -787,7 +787,7 @@ func TestSegmentProcessor_OneOff_ErrorHandling(t *testing.T) {
 		config.TotalSegments = totalSegments
 		config.BatchSize = 10
 
-		processor := postgres.NewSegmentProcessor(db, store, &config)
+		processor := postgres.NewSegmentProcessor(db, store, config)
 
 		err := processor.Run(ctx, cons)
 		if err == nil {

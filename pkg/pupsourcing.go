@@ -26,7 +26,8 @@
 //     w.Run(ctx, &MyProjection{}, &OtherProjection{})
 //
 //     Or use the lower-level Processor API for custom workflows:
-//     processor := consumer.NewProcessor(db, store, consumer.DefaultProcessorConfig())
+//     config := consumer.DefaultBasicProcessorConfig()
+//     processor := sqlite.NewBasicProcessor(db, store, config)
 //     processor.Run(ctx, myConsumer)
 //
 // See the examples directory for complete working examples.

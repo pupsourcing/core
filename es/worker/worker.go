@@ -223,11 +223,11 @@ func (w *Worker) Run(ctx context.Context, consumers ...consumer.Consumer) error 
 
 	var dispatcher *consumer.Dispatcher
 	if w.config.EnableDispatcher {
-		dispatcherCfg := consumer.DispatcherConfig{
+		dispatcherCfg := &consumer.DispatcherConfig{
 			PollInterval: w.config.DispatcherPollInterval,
 			Logger:       w.config.Logger,
 		}
-		dispatcher = consumer.NewDispatcher(w.db, w.posReader, &dispatcherCfg)
+		dispatcher = consumer.NewDispatcher(w.db, w.posReader, dispatcherCfg)
 	}
 
 	runners := make([]runner.ConsumerRunner, 0, len(consumers))

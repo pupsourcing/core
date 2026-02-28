@@ -1,3 +1,45 @@
+// Segment store types for consumer coordination and horizontal auto-scaling.
+//
+// # Overview
+//
+// SegmentStore is consumer coordination infrastructure, not event storage.
+// While adapters implement it alongside EventStore (to share DB connections),
+// segments solve a fundamentally different problem: distributing work across
+// consumer instances without restarts or manual reconfiguration.
+//
+// # How Segments Enable Horizontal Scaling
+//
+// A logical consumer (e.g., "order-processor") can be split into N segments.
+// Each segment:
+//   - Maps to a partition of the event space via PartitionStrategy
+//   - Can be claimed by any worker instance
+//   - Tracks its own checkpoint independently
+//   - Can be released, reclaimed, or rebalanced dynamically
+//
+// This allows M workers to process N segments with automatic work distribution,
+// failure recovery, and elastic scaling without changing configuration or restarting.
+//
+// # Relationship to Partition Strategies
+//
+// The segment count (totalSegments) should match the partition count in your
+// PartitionStrategy. For example:
+//   - Hash-based partitioning with 16 buckets → 16 segments
+//   - Each segment processes events where (hash % 16) == segmentID
+//   - Workers claim segments dynamically; segments can move between workers
+//
+// The partition strategy is configurable and independent of the segment store.
+// See the partition package for available strategies.
+//
+// # Why Segments Live in store/
+//
+// Segments are defined here (alongside EventStore interfaces) for pragmatic reasons:
+//   - Adapters implement both EventStore and SegmentStore
+//   - Both share the same underlying database connection
+//   - Both are persistence contracts that adapters must fulfill
+//   - The store/ package serves as the "all adapter contracts" package
+//
+// This co-location does not imply conceptual coupling. Segments coordinate consumers;
+// EventStore persists events. They're separate concerns with a shared adapter boundary.
 package store
 
 import (

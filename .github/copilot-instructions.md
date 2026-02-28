@@ -222,12 +222,24 @@ func (p *MyProjection) Handle(ctx context.Context, tx *sql.Tx, event es.Persiste
 ```
 
 ### Horizontal Scaling
+
+**Worker API (recommended):**
 ```go
-config := consumer.DefaultProcessorConfig()
+// Auto-scaling via segment claiming
+w := postgres.NewWorker(db, store,
+    worker.WithTotalSegments(32),
+)
+err := w.Run(ctx, &MyProjection{})
+```
+
+**BasicProcessor with fixed partitioning:**
+```go
+config := consumer.DefaultBasicProcessorConfig()
 config.TotalPartitions = 4  // Total number of workers
 config.PartitionKey = 0     // This worker's partition (0-3)
 
-processor := consumer.NewProcessor(db, store, config)
+processor := sqlite.NewBasicProcessor(db, store, config)
+err := processor.Run(ctx, myConsumer)
 ```
 
 ## Best Practices for Contributors

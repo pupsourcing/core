@@ -175,8 +175,8 @@ type WakeupSource interface {
 	Subscribe() (signals <-chan struct{}, unsubscribe func())
 }
 
-// ProcessorConfig configures a consumer processor.
-type ProcessorConfig struct {
+// BasicProcessorConfig configures a consumer processor.
+type BasicProcessorConfig struct {
 	// PartitionStrategy determines which events this processor handles
 	PartitionStrategy PartitionStrategy
 
@@ -222,9 +222,9 @@ type ProcessorConfig struct {
 	RunMode RunMode
 }
 
-// DefaultProcessorConfig returns the default configuration.
-func DefaultProcessorConfig() ProcessorConfig {
-	return ProcessorConfig{
+// DefaultBasicProcessorConfig returns the default configuration.
+func DefaultBasicProcessorConfig() *BasicProcessorConfig {
+	return &BasicProcessorConfig{
 		BatchSize:         100,
 		PartitionKey:      0,
 		TotalPartitions:   1,

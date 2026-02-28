@@ -131,24 +131,6 @@ go run main.go --mode=status
 go run main.go --mode=process
 ```
 
-### [Scoped Projections](./scoped-projections/)
-**Difficulty:** Intermediate  
-**Best for:** Understanding scoped vs global projections
-
-Demonstrates the difference between scoped projections (read models filtering by aggregate type) and global projections (integration/outbox publishers receiving all events).
-
-**What you'll learn:**
-- Scoped projections that filter by aggregate type
-- Global projections that receive all events
-- Use cases for each pattern
-- Running both types concurrently
-
-**Run it:**
-```bash
-cd scoped-projections
-go run main.go
-```
-
 ### [Custom Logging](./with-logging/)
 **Difficulty:** Beginner  
 **Best for:** Production observability integration

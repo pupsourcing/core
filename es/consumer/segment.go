@@ -13,7 +13,7 @@ const DefaultSegments = 16
 // Segment processors enable auto-scaling consumer processing by pre-creating a fixed
 // number of segments that workers dynamically claim and rebalance across instances.
 type SegmentProcessorConfig struct {
-	// --- Processing (same semantics as ProcessorConfig) ---
+	// --- Processing (same semantics as BasicProcessorConfig) ---
 
 	// PartitionStrategy determines which events a segment processes.
 	// Default: HashPartitionStrategy{}
@@ -77,8 +77,8 @@ type SegmentProcessorConfig struct {
 }
 
 // DefaultSegmentProcessorConfig returns the default segment processor configuration.
-func DefaultSegmentProcessorConfig() SegmentProcessorConfig {
-	return SegmentProcessorConfig{
+func DefaultSegmentProcessorConfig() *SegmentProcessorConfig {
+	return &SegmentProcessorConfig{
 		// Segment management
 		TotalSegments:     DefaultSegments,
 		HeartbeatInterval: 5 * time.Second,

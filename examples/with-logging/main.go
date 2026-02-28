@@ -180,9 +180,11 @@ func main() {
 	fmt.Println("--- Running Projection with Logging ---")
 	proj := &UserProjection{users: []string{}}
 
-	processorConfig := consumer.DefaultProcessorConfig()
+	processorConfig := consumer.DefaultSegmentProcessorConfig()
+	// For simple examples, use single segment
+	processorConfig.TotalSegments = 1
 	processorConfig.Logger = projectionLogger
-	processor := postgres.NewProcessor(db, store, &processorConfig)
+	processor := postgres.NewSegmentProcessor(db, store, processorConfig)
 
 	// Run projection for a short time
 	ctx2, cancel := context.WithTimeout(ctx, 2*time.Second)

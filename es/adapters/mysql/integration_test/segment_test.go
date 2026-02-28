@@ -10,6 +10,7 @@ package integration_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sync"
 	"testing"
@@ -20,6 +21,37 @@ import (
 	"github.com/pupsourcing/core/es/adapters/mysql"
 	"github.com/pupsourcing/core/es/consumer"
 )
+
+// testConsumer is a simple consumer for testing.
+type testConsumer struct {
+	name   string
+	events []es.PersistedEvent
+	mu     sync.Mutex
+}
+
+func newTestConsumer(name string) *testConsumer {
+	return &testConsumer{
+		name:   name,
+		events: make([]es.PersistedEvent, 0),
+	}
+}
+
+func (p *testConsumer) Name() string {
+	return p.name
+}
+
+func (p *testConsumer) Handle(_ context.Context, _ *sql.Tx, event es.PersistedEvent) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.events = append(p.events, event)
+	return nil
+}
+
+func (p *testConsumer) EventCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.events)
+}
 
 func TestSegmentStore_InitializeSegments(t *testing.T) {
 	db := getTestDB(t)
@@ -697,7 +729,7 @@ func TestSegmentProcessor_OneOff(t *testing.T) {
 	config.HeartbeatInterval = 100 * time.Millisecond
 	config.RebalanceInterval = 200 * time.Millisecond
 
-	processor := mysql.NewSegmentProcessor(db, store, &config)
+	processor := mysql.NewSegmentProcessor(db, store, config)
 
 	// Run processor (should exit after processing all events)
 	err := processor.Run(ctx, cons)

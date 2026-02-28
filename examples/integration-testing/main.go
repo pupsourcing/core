@@ -77,10 +77,10 @@ func run() error {
 
 	// Process with one-off mode
 	proj := &UserProjection{}
-	config := consumer.DefaultProcessorConfig()
+	config := consumer.DefaultBasicProcessorConfig()
 	config.RunMode = consumer.RunModeOneOff
 
-	processor := sqlite.NewProcessor(db, store, &config)
+	processor := sqlite.NewBasicProcessor(db, store, config)
 
 	fmt.Println("Processing events in one-off mode...")
 	if err := processor.Run(ctx, proj); err != nil {

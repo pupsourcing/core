@@ -21,7 +21,11 @@ import (
 
 var _ consumer.ProcessorRunner = (*SegmentProcessor)(nil)
 
-var errNoEventsInBatch = errors.New("no events in batch")
+var (
+	errNoEventsInBatch = errors.New("no events in batch")
+	// ErrConsumerStopped indicates the consumer was stopped due to an error.
+	ErrConsumerStopped = errors.New("consumer stopped")
+)
 
 type SegmentProcessor struct {
 	db      *sql.DB
@@ -809,4 +813,44 @@ func (p *SegmentProcessor) nextPollDelay(current time.Duration) time.Duration {
 // ceilDiv performs integer ceiling division.
 func ceilDiv(a, b int) int {
 	return (a + b - 1) / b
+}
+
+// buildAggregateTypeFilter builds a filter map for scoped consumers with aggregate types.
+// Returns nil if the consumer is not scoped or has an empty aggregate types list.
+func buildAggregateTypeFilter(proj consumer.Consumer) map[string]bool {
+	scopedProj, ok := proj.(consumer.ScopedConsumer)
+	if !ok {
+		return nil
+	}
+
+	types := scopedProj.AggregateTypes()
+	if len(types) == 0 {
+		return nil
+	}
+
+	filter := make(map[string]bool, len(types))
+	for _, aggType := range types {
+		filter[aggType] = true
+	}
+	return filter
+}
+
+// buildBoundedContextFilter builds a filter map for scoped consumers with bounded contexts.
+// Returns nil if the consumer is not scoped or has an empty bounded contexts list.
+func buildBoundedContextFilter(proj consumer.Consumer) map[string]bool {
+	scopedProj, ok := proj.(consumer.ScopedConsumer)
+	if !ok {
+		return nil
+	}
+
+	contexts := scopedProj.BoundedContexts()
+	if len(contexts) == 0 {
+		return nil
+	}
+
+	filter := make(map[string]bool, len(contexts))
+	for _, ctx := range contexts {
+		filter[ctx] = true
+	}
+	return filter
 }

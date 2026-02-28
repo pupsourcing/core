@@ -33,16 +33,24 @@ type ConsumerRunner struct {
 //
 // Example with PostgreSQL:
 //
-// store := postgres.NewStore(postgres.DefaultStoreConfig())
-// processor1 := postgres.NewProcessor(db, store, &config1)
-// processor2 := postgres.NewProcessor(db, store, &config2)
+//	store := postgres.NewStore(postgres.DefaultStoreConfig())
+//	config1 := consumer.DefaultSegmentProcessorConfig()
+//	config1.TotalSegments = 1
+//	processor1 := postgres.NewSegmentProcessor(db, store, &config1)
+//	config2 := consumer.DefaultSegmentProcessorConfig()
+//	config2.TotalSegments = 1
+//	processor2 := postgres.NewSegmentProcessor(db, store, &config2)
 //
-// runner := runner.New()
-//
+//	runner := runner.New()
 //	err := runner.Run(ctx, []runner.ConsumerRunner{
 //	   {Consumer: &MyConsumer{}, Processor: processor1},
 //	   {Consumer: &MyOtherConsumer{}, Processor: processor2},
 //	})
+//
+// For most use cases, prefer the Worker API which provides auto-scaling:
+//
+//	w := postgres.NewWorker(db, store)
+//	err := w.Run(ctx, &MyConsumer{}, &MyOtherConsumer{})
 type Runner struct{}
 
 // New creates a new consumer runner.

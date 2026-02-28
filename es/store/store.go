@@ -1,4 +1,15 @@
-// Package store provides event store abstractions and implementations.
+// Package store defines persistence contracts for event sourcing and consumer coordination.
+//
+// This package contains two categories of interfaces:
+//
+// Event Storage: EventStore, EventReader, AggregateStreamReader - for persisting and
+// reading domain events.
+//
+// Consumer Infrastructure: SegmentStore, CheckpointStore - for coordinating distributed
+// consumers and tracking processing progress.
+//
+// Adapters (e.g., postgres.Store) implement both categories, sharing the underlying
+// database connection for transactional consistency and operational simplicity.
 package store
 
 import (
