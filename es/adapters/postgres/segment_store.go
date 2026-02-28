@@ -357,6 +357,35 @@ func (s *Store) CountActiveWorkers(
 	return count, nil
 }
 
+// ListActiveWorkers implements store.SegmentStore.
+func (s *Store) ListActiveWorkers(
+	ctx context.Context, tx es.DBTX, consumerName string, staleThreshold time.Duration,
+) ([]string, error) {
+	query := fmt.Sprintf(`
+		SELECT worker_id FROM %s
+		WHERE consumer_name = $1
+		  AND last_heartbeat >= NOW() - make_interval(secs => $2)
+		ORDER BY worker_id
+	`, s.config.WorkerRegistryTable)
+
+	rows, err := tx.QueryContext(ctx, query, consumerName, staleThreshold.Seconds())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list active workers: %w", err)
+	}
+	defer rows.Close()
+
+	var workers []string
+	for rows.Next() {
+		var workerID string
+		if err := rows.Scan(&workerID); err != nil {
+			return nil, fmt.Errorf("failed to scan worker ID: %w", err)
+		}
+		workers = append(workers, workerID)
+	}
+
+	return workers, rows.Err()
+}
+
 // PurgeStaleWorkers implements store.SegmentStore.
 func (s *Store) PurgeStaleWorkers(
 	ctx context.Context, tx es.DBTX, consumerName string, staleThreshold time.Duration,

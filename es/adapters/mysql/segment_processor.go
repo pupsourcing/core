@@ -286,6 +286,10 @@ func (p *SegmentProcessor) reclaimStale(ctx context.Context, consumerName string
 }
 
 // calculateFairShare determines the fair share of segments for this worker.
+// calculateFairShare determines the fair share of segments for this worker using rank-based assignment.
+// Each worker finds its position in a sorted list of active workers and deterministically computes
+// whether it gets floor(total/workers) or floor(total/workers)+1 segments. The first (total % workers)
+// workers in sorted order get the extra segment.
 func (p *SegmentProcessor) calculateFairShare(ctx context.Context, consumerName string) ([]*store.Segment, int, error) {
 	segments, err := p.store.GetSegments(ctx, p.db, consumerName)
 	if err != nil {
@@ -300,21 +304,43 @@ func (p *SegmentProcessor) calculateFairShare(ctx context.Context, consumerName 
 		}
 	}
 
-	activeWorkers, err := p.store.CountActiveWorkers(ctx, p.db, consumerName, p.config.StaleThreshold)
+	activeWorkers, err := p.store.ListActiveWorkers(ctx, p.db, consumerName, p.config.StaleThreshold)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to count active workers: %w", err)
+		return nil, 0, fmt.Errorf("failed to list active workers: %w", err)
 	}
-	if activeWorkers == 0 {
-		activeWorkers = 1
+	if len(activeWorkers) == 0 {
+		activeWorkers = []string{p.ownerID}
 	}
 
-	fairShare := ceilDiv(p.config.TotalSegments, activeWorkers)
+	// Find my rank in the sorted worker list
+	myRank := -1
+	for i, wid := range activeWorkers {
+		if wid == p.ownerID {
+			myRank = i
+			break
+		}
+	}
+	if myRank == -1 {
+		// Not in registry yet (shouldn't happen, but be safe)
+		myRank = len(activeWorkers)
+		activeWorkers = append(activeWorkers, p.ownerID)
+	}
+
+	// Rank-based fair share: first (remainder) workers get floor+1, rest get floor
+	floor := p.config.TotalSegments / len(activeWorkers)
+	remainder := p.config.TotalSegments % len(activeWorkers)
+
+	fairShare := floor
+	if myRank < remainder {
+		fairShare = floor + 1
+	}
 
 	if p.config.Logger != nil {
 		p.config.Logger.Debug(ctx, "rebalance check",
 			"consumer", consumerName,
 			"my_segments", len(mySegments),
-			"active_workers", activeWorkers,
+			"active_workers", len(activeWorkers),
+			"my_rank", myRank,
 			"fair_share", fairShare)
 	}
 
@@ -838,11 +864,6 @@ func (p *SegmentProcessor) nextPollDelay(current time.Duration) time.Duration {
 	}
 
 	return next
-}
-
-// ceilDiv performs integer ceiling division.
-func ceilDiv(a, b int) int {
-	return (a + b - 1) / b
 }
 
 // buildAggregateTypeFilter builds a filter map for scoped consumers with aggregate types.

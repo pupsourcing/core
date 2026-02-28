@@ -205,6 +205,19 @@ type SegmentStore interface {
 	// - error if the operation fails
 	CountActiveWorkers(ctx context.Context, tx es.DBTX, consumerName string, staleThreshold time.Duration) (int, error)
 
+	// ListActiveWorkers returns the sorted worker IDs with fresh heartbeats.
+	// Used for rank-based fair share: each worker finds its position in the sorted
+	// list to deterministically decide whether it gets floor or floor+1 segments.
+	//
+	// Parameters:
+	// - consumerName: the logical consumer name
+	// - staleThreshold: workers with heartbeats older than this are excluded
+	//
+	// Returns:
+	// - Sorted slice of active worker IDs (lexicographic order)
+	// - error if the operation fails
+	ListActiveWorkers(ctx context.Context, tx es.DBTX, consumerName string, staleThreshold time.Duration) ([]string, error)
+
 	// PurgeStaleWorkers removes registry entries with expired heartbeats.
 	// Called during rebalance to clean up crashed workers.
 	//
