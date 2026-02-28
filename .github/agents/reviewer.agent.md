@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: An uncompromising code reviewer who catches leftover artifacts, dead code, naming inconsistencies, missing tests, and architectural drift — treats every review as if the code ships to production tomorrow
-model: Claude Opus 4.6 (copilot)
+model: claude-opus-4.6
 tools: ["read", "bash", "grep", "glob"]
 ---
 

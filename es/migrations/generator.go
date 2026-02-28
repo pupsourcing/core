@@ -24,6 +24,9 @@ type Config struct {
 
 	// AggregateHeadsTable is the name of the aggregate version tracking table
 	AggregateHeadsTable string
+
+	// SegmentsTable is the name of the consumer segments table
+	SegmentsTable string
 }
 
 // DefaultConfig returns the default configuration.
@@ -35,6 +38,7 @@ func DefaultConfig() Config {
 		EventsTable:         "events",
 		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
+		SegmentsTable:       "consumer_segments",
 	}
 }
 
@@ -119,6 +123,22 @@ CREATE TABLE IF NOT EXISTS %s (
 -- Index for checkpoints
 CREATE INDEX IF NOT EXISTS idx_%s_updated 
     ON %s (updated_at);
+
+-- Consumer segments table for auto-scaling event processing
+-- Each segment tracks ownership and processing position for distributed consumers
+CREATE TABLE IF NOT EXISTS %s (
+    consumer_name TEXT NOT NULL,
+    segment_id INT NOT NULL,
+    total_segments INT NOT NULL,
+    owner_id TEXT,
+    checkpoint BIGINT NOT NULL DEFAULT 0,
+    last_heartbeat TIMESTAMPTZ,
+    PRIMARY KEY (consumer_name, segment_id)
+);
+
+-- Index for stale segment cleanup and fair-share queries
+CREATE INDEX IF NOT EXISTS idx_%s_owner
+    ON %s (consumer_name, owner_id);
 `,
 		time.Now().Format(time.RFC3339),
 		config.EventsTable,
@@ -129,6 +149,8 @@ CREATE INDEX IF NOT EXISTS idx_%s_updated
 		config.AggregateHeadsTable, config.AggregateHeadsTable,
 		config.CheckpointsTable,
 		config.CheckpointsTable, config.CheckpointsTable,
+		config.SegmentsTable,
+		config.SegmentsTable, config.SegmentsTable,
 	)
 }
 
@@ -213,6 +235,22 @@ CREATE TABLE IF NOT EXISTS %s (
 -- Index for checkpoints
 CREATE INDEX IF NOT EXISTS idx_%s_updated 
     ON %s (updated_at);
+
+-- Consumer segments table for auto-scaling event processing
+-- Each segment tracks ownership and processing position for distributed consumers
+CREATE TABLE IF NOT EXISTS %s (
+    consumer_name TEXT NOT NULL,
+    segment_id INTEGER NOT NULL,
+    total_segments INTEGER NOT NULL,
+    owner_id TEXT,
+    checkpoint INTEGER NOT NULL DEFAULT 0,
+    last_heartbeat TEXT,
+    PRIMARY KEY (consumer_name, segment_id)
+);
+
+-- Index for stale segment cleanup and fair-share queries
+CREATE INDEX IF NOT EXISTS idx_%s_owner
+    ON %s (consumer_name, owner_id);
 `,
 		time.Now().Format(time.RFC3339),
 		config.EventsTable,
@@ -223,6 +261,8 @@ CREATE INDEX IF NOT EXISTS idx_%s_updated
 		config.AggregateHeadsTable, config.AggregateHeadsTable,
 		config.CheckpointsTable,
 		config.CheckpointsTable, config.CheckpointsTable,
+		config.SegmentsTable,
+		config.SegmentsTable, config.SegmentsTable,
 	)
 }
 
@@ -307,6 +347,22 @@ CREATE TABLE IF NOT EXISTS %s (
 -- Index for checkpoints
 CREATE INDEX idx_%s_updated 
     ON %s (updated_at);
+
+-- Consumer segments table for auto-scaling event processing
+-- Each segment tracks ownership and processing position for distributed consumers
+CREATE TABLE IF NOT EXISTS %s (
+    consumer_name VARCHAR(255) NOT NULL,
+    segment_id INT NOT NULL,
+    total_segments INT NOT NULL,
+    owner_id VARCHAR(255),
+    checkpoint BIGINT NOT NULL DEFAULT 0,
+    last_heartbeat TIMESTAMP(6) NULL,
+    PRIMARY KEY (consumer_name, segment_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Index for stale segment cleanup and fair-share queries
+CREATE INDEX idx_%s_owner
+    ON %s (consumer_name, owner_id);
 `,
 		time.Now().Format(time.RFC3339),
 		config.EventsTable,
@@ -317,5 +373,7 @@ CREATE INDEX idx_%s_updated
 		config.AggregateHeadsTable, config.AggregateHeadsTable,
 		config.CheckpointsTable,
 		config.CheckpointsTable, config.CheckpointsTable,
+		config.SegmentsTable,
+		config.SegmentsTable, config.SegmentsTable,
 	)
 }

@@ -122,6 +122,7 @@ func setupDatabase() (*sql.DB, error) {
 		EventsTable:         "events",
 		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
+		SegmentsTable:       "consumer_segments",
 	}
 
 	if genErr := migrations.GenerateSQLite(&config); genErr != nil {

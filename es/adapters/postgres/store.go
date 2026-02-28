@@ -26,6 +26,9 @@ type StoreConfig struct {
 
 	// AggregateHeadsTable is the name of the aggregate version tracking table
 	AggregateHeadsTable string
+
+	// SegmentsTable is the name of the consumer segments table
+	SegmentsTable string
 }
 
 // DefaultStoreConfig returns the default configuration.
@@ -34,6 +37,7 @@ func DefaultStoreConfig() StoreConfig {
 		EventsTable:         "events",
 		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
+		SegmentsTable:       "consumer_segments",
 		Logger:              nil, // No logging by default
 	}
 }
@@ -66,6 +70,13 @@ func WithCheckpointsTable(tableName string) StoreOption {
 func WithAggregateHeadsTable(tableName string) StoreOption {
 	return func(c *StoreConfig) {
 		c.AggregateHeadsTable = tableName
+	}
+}
+
+// WithSegmentsTable sets a custom consumer segments table name.
+func WithSegmentsTable(tableName string) StoreOption {
+	return func(c *StoreConfig) {
+		c.SegmentsTable = tableName
 	}
 }
 

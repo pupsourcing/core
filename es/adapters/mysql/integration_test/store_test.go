@@ -98,6 +98,7 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 		EventsTable:         "events",
 		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
+		SegmentsTable:       "consumer_segments",
 	}
 
 	if err := migrations.GenerateMySQL(&config); err != nil {

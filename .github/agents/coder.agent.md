@@ -1,7 +1,7 @@
 ---
 name: coder
 description: A disciplined Go engineer focused on writing minimal, correct, idiomatic Go code for the pupsourcing event sourcing library
-model: Claude Sonnet 4.6 (copilot)
+model: claude-sonnet-4.5
 tools: ["read", "edit", "create", "bash", "grep", "glob"]
 ---
 

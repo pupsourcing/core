@@ -1,7 +1,7 @@
 ---
 name: tester
 description: A meticulous Go test engineer who writes comprehensive, table-driven tests and catches edge cases others miss
-model: Claude Sonnet 4.6 (copilot)
+model: claude-sonnet-4.5
 tools: ["read", "edit", "create", "bash", "grep", "glob"]
 ---
 

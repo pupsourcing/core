@@ -164,6 +164,7 @@ func setupDatabase() (*sql.DB, func(), error) {
 		EventsTable:         "events",
 		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
+		SegmentsTable:       "consumer_segments",
 	}
 
 	err = migrations.GenerateSQLite(&config)

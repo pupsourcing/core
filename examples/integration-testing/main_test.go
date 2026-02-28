@@ -218,6 +218,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 		EventsTable:         "events",
 		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
+		SegmentsTable:       "consumer_segments",
 	}
 
 	if genErr := migrations.GenerateSQLite(&config); genErr != nil {
