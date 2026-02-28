@@ -77,7 +77,11 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 
 	// Drop existing objects to ensure clean state
 	// MySQL requires separate Exec calls for each statement
-	_, err := db.Exec(`DROP TABLE IF EXISTS consumer_checkpoints`)
+	_, err := db.Exec(`DROP TABLE IF EXISTS consumer_segments`)
+	if err != nil {
+		t.Fatalf("Failed to drop consumer_segments table: %v", err)
+	}
+	_, err = db.Exec(`DROP TABLE IF EXISTS consumer_checkpoints`)
 	if err != nil {
 		t.Fatalf("Failed to drop consumer_checkpoints table: %v", err)
 	}

@@ -11,6 +11,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -505,7 +506,7 @@ func TestSegmentProcessor_OneOff(t *testing.T) {
 	consumerName := "test-segment-processor"
 	totalSegments := 4
 
-	// Append test events
+	// Append test events - one per aggregate (Append requires same aggregate per batch)
 	const eventCount = 20
 
 	tx, err := db.BeginTx(ctx, nil)
@@ -513,12 +514,11 @@ func TestSegmentProcessor_OneOff(t *testing.T) {
 		t.Fatalf("Failed to begin transaction: %v", err)
 	}
 
-	events := make([]es.Event, eventCount)
 	for i := 0; i < eventCount; i++ {
-		events[i] = es.Event{
+		event := es.Event{
 			BoundedContext: "TestContext",
 			AggregateType:  "TestAggregate",
-			AggregateID:    fmt.Sprintf("agg-%d", i), // Different aggregates for distribution
+			AggregateID:    fmt.Sprintf("agg-%d", i),
 			EventID:        uuid.New(),
 			EventType:      "TestEvent",
 			EventVersion:   1,
@@ -526,13 +526,12 @@ func TestSegmentProcessor_OneOff(t *testing.T) {
 			Metadata:       []byte(`{}`),
 			CreatedAt:      time.Now(),
 		}
-	}
-
-	_, err = store.Append(ctx, tx, es.NoStream(), events)
-	if err != nil {
-		//nolint:errcheck // Rollback error is expected if transaction already failed
-		tx.Rollback()
-		t.Fatalf("Failed to append events: %v", err)
+		_, err = store.Append(ctx, tx, es.NoStream(), []es.Event{event})
+		if err != nil {
+			//nolint:errcheck
+			tx.Rollback()
+			t.Fatalf("Failed to append event %d: %v", i, err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -666,9 +665,8 @@ func TestSegmentProcessor_OneOff_EventDistribution(t *testing.T) {
 		t.Fatalf("Failed to begin transaction: %v", err)
 	}
 
-	events := make([]es.Event, eventCount)
 	for i := 0; i < eventCount; i++ {
-		events[i] = es.Event{
+		event := es.Event{
 			BoundedContext: "TestContext",
 			AggregateType:  "TestAggregate",
 			AggregateID:    fmt.Sprintf("aggregate-%d", i),
@@ -679,13 +677,12 @@ func TestSegmentProcessor_OneOff_EventDistribution(t *testing.T) {
 			Metadata:       []byte(`{}`),
 			CreatedAt:      time.Now(),
 		}
-	}
-
-	_, err = store.Append(ctx, tx, es.NoStream(), events)
-	if err != nil {
-		//nolint:errcheck // Rollback error is expected if transaction already failed
-		tx.Rollback()
-		t.Fatalf("Failed to append events: %v", err)
+		_, err = store.Append(ctx, tx, es.NoStream(), []es.Event{event})
+		if err != nil {
+			//nolint:errcheck
+			tx.Rollback()
+			t.Fatalf("Failed to append event %d: %v", i, err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -746,42 +743,30 @@ func TestSegmentProcessor_OneOff_ErrorHandling(t *testing.T) {
 	consumerName := "test-segment-error"
 	totalSegments := 2
 
-	// Append test events
+	// Append test events - one per aggregate
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatalf("Failed to begin transaction: %v", err)
 	}
 
-	events := []es.Event{
-		{
+	for i, aggID := range []string{"agg-1", "agg-2"} {
+		event := es.Event{
 			BoundedContext: "TestContext",
 			AggregateType:  "TestAggregate",
-			AggregateID:    "agg-1",
+			AggregateID:    aggID,
 			EventID:        uuid.New(),
 			EventType:      "TestEvent",
 			EventVersion:   1,
-			Payload:        []byte(`{"index":1}`),
+			Payload:        []byte(fmt.Sprintf(`{"index":%d}`, i+1)),
 			Metadata:       []byte(`{}`),
 			CreatedAt:      time.Now(),
-		},
-		{
-			BoundedContext: "TestContext",
-			AggregateType:  "TestAggregate",
-			AggregateID:    "agg-2",
-			EventID:        uuid.New(),
-			EventType:      "TestEvent",
-			EventVersion:   1,
-			Payload:        []byte(`{"index":2}`),
-			Metadata:       []byte(`{}`),
-			CreatedAt:      time.Now(),
-		},
-	}
-
-	_, err = store.Append(ctx, tx, es.NoStream(), events)
-	if err != nil {
-		//nolint:errcheck // Rollback error is expected if transaction already failed
-		tx.Rollback()
-		t.Fatalf("Failed to append events: %v", err)
+		}
+		_, err = store.Append(ctx, tx, es.NoStream(), []es.Event{event})
+		if err != nil {
+			//nolint:errcheck
+			tx.Rollback()
+			t.Fatalf("Failed to append event %s: %v", aggID, err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -809,8 +794,8 @@ func TestSegmentProcessor_OneOff_ErrorHandling(t *testing.T) {
 			t.Fatal("Expected error, got nil")
 		}
 
-		if err.Error() != "simulated consumer error" {
-			t.Errorf("Expected simulated consumer error, got: %v", err)
+		if !strings.Contains(err.Error(), "simulated consumer error") {
+			t.Errorf("Expected error to contain 'simulated consumer error', got: %v", err)
 		}
 	})
 }

@@ -51,10 +51,11 @@ When you find leftovers, be specific: "File X, line Y: `PartitionKey` field on `
 1. **Read the full diff** — understand what changed and why
 2. **Read surrounding code** — understand what existed before
 3. **Check for orphans** — grep for old names, old table references, old config fields
-4. **Run the linter** — `golangci-lint run --timeout=5m`
-5. **Run tests** — `go test ./...` — check for failures AND for missing test output
-6. **Produce a structured review** with severity levels:
-   - 🔴 **BLOCKER**: Must fix before merge (bugs, dead code, missing critical tests)
+4. **Run the linter on the entire project** — `golangci-lint run --timeout=5m` (always from the repo root, always the full project, never scoped to a subdirectory)
+5. **Run unit tests** — `go test ./...` — check for failures AND for missing test output
+6. **Run the full integration test suite** — `make test-integration-local` (this starts databases via Docker Compose, runs ALL integration tests against real PostgreSQL and MySQL, and tears down). Never skip this step. If any integration test fails, it's a blocker.
+7. **Produce a structured review** with severity levels:
+   - 🔴 **BLOCKER**: Must fix before merge (bugs, dead code, missing critical tests, failing integration tests)
    - 🟡 **WARNING**: Should fix (naming inconsistency, missing edge case test)
    - 🟢 **NIT**: Nice to fix (comment style, minor optimization)
 

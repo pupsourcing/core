@@ -664,11 +664,10 @@ func TestSegmentProcessor_OneOff(t *testing.T) {
 	}
 
 	eventCount := 20
-	events := make([]es.Event, 0, eventCount)
+	tx, _ := db.BeginTx(ctx, nil)
 	for i := 0; i < eventCount; i++ {
-		// Round-robin across aggregates to ensure distribution
 		aggregateID := aggregates[i%len(aggregates)]
-		events = append(events, es.Event{
+		event := es.Event{
 			BoundedContext: "TestContext",
 			AggregateType:  "TestAggregate",
 			AggregateID:    aggregateID,
@@ -678,14 +677,13 @@ func TestSegmentProcessor_OneOff(t *testing.T) {
 			Payload:        []byte(fmt.Sprintf(`{"num":%d}`, i+1)),
 			Metadata:       []byte(`{}`),
 			CreatedAt:      time.Now(),
-		})
+		}
+		_, err := store.Append(ctx, tx, es.Any(), []es.Event{event})
+		if err != nil {
+			t.Fatalf("Failed to append event %d: %v", i, err)
+		}
 	}
-
-	tx, _ := db.BeginTx(ctx, nil)
-	_, err := store.Append(ctx, tx, es.Any(), events)
-	if err != nil {
-		t.Fatalf("Failed to append events: %v", err)
-	}
+	//nolint:errcheck
 	tx.Commit()
 
 	// Create test consumer
@@ -702,7 +700,7 @@ func TestSegmentProcessor_OneOff(t *testing.T) {
 	processor := mysql.NewSegmentProcessor(db, store, &config)
 
 	// Run processor (should exit after processing all events)
-	err = processor.Run(ctx, cons)
+	err := processor.Run(ctx, cons)
 	if err != nil {
 		t.Fatalf("SegmentProcessor.Run() failed: %v", err)
 	}
