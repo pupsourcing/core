@@ -35,8 +35,8 @@ type StoreConfig struct {
 }
 
 // DefaultStoreConfig returns the default configuration.
-func DefaultStoreConfig() StoreConfig {
-	return StoreConfig{
+func DefaultStoreConfig() *StoreConfig {
+	return &StoreConfig{
 		EventsTable:         "events",
 		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
@@ -92,10 +92,10 @@ func WithSegmentsTable(tableName string) StoreOption {
 //	    mysql.WithLogger(myLogger),
 //	    mysql.WithEventsTable("custom_events"),
 //	)
-func NewStoreConfig(opts ...StoreOption) StoreConfig {
+func NewStoreConfig(opts ...StoreOption) *StoreConfig {
 	config := DefaultStoreConfig()
 	for _, opt := range opts {
-		opt(&config)
+		opt(config)
 	}
 	return config
 }
@@ -106,9 +106,9 @@ type Store struct {
 }
 
 // NewStore creates a new MySQL event store with the given configuration.
-func NewStore(config StoreConfig) *Store {
+func NewStore(config *StoreConfig) *Store {
 	return &Store{
-		config: config,
+		config: *config,
 	}
 }
 
