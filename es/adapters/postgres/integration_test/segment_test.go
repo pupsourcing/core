@@ -68,9 +68,6 @@ func TestSegmentStore_InitializeSegments(t *testing.T) {
 			if seg.Checkpoint != 0 {
 				t.Errorf("Segment %d: expected checkpoint=0, got %d", i, seg.Checkpoint)
 			}
-			if seg.LastHeartbeat != nil {
-				t.Errorf("Segment %d: expected last_heartbeat=nil, got %v", i, *seg.LastHeartbeat)
-			}
 		}
 	})
 
@@ -129,13 +126,6 @@ func TestSegmentStore_ClaimAndRelease(t *testing.T) {
 		if seg.OwnerID == nil || *seg.OwnerID != ownerID {
 			t.Errorf("Expected owner_id=%q, got %v", ownerID, seg.OwnerID)
 		}
-
-		if seg.LastHeartbeat == nil {
-			t.Error("Expected last_heartbeat to be set, got nil")
-		} else if time.Since(*seg.LastHeartbeat) > 5*time.Second {
-			// Should be recent
-			t.Errorf("Expected recent heartbeat, got %v", *seg.LastHeartbeat)
-		}
 	})
 
 	t.Run("release segment makes it unclaimed", func(t *testing.T) {
@@ -153,9 +143,6 @@ func TestSegmentStore_ClaimAndRelease(t *testing.T) {
 		seg0 := segments[0]
 		if seg0.OwnerID != nil {
 			t.Errorf("Expected segment 0 to be unclaimed, got owner_id=%v", *seg0.OwnerID)
-		}
-		if seg0.LastHeartbeat != nil {
-			t.Errorf("Expected segment 0 last_heartbeat=nil, got %v", *seg0.LastHeartbeat)
 		}
 	})
 }
@@ -213,77 +200,6 @@ func TestSegmentStore_ClaimAllSegments(t *testing.T) {
 	})
 }
 
-func TestSegmentStore_Heartbeat(t *testing.T) {
-	db := getTestDB(t)
-	defer db.Close()
-
-	setupTestTables(t, db)
-
-	ctx := context.Background()
-	store := postgres.NewStore(postgres.DefaultStoreConfig())
-
-	consumerName := "test-consumer-heartbeat"
-	totalSegments := 4
-	ownerID := "worker-1"
-
-	// Initialize and claim segments
-	err := store.InitializeSegments(ctx, db, consumerName, totalSegments)
-	if err != nil {
-		t.Fatalf("Failed to initialize segments: %v", err)
-	}
-
-	seg1, err := store.ClaimSegment(ctx, db, consumerName, ownerID)
-	if err != nil {
-		t.Fatalf("Failed to claim segment: %v", err)
-	}
-	if seg1 == nil {
-		t.Fatal("Expected to claim a segment")
-	}
-
-	firstHeartbeat := *seg1.LastHeartbeat
-
-	t.Run("heartbeat updates last_heartbeat", func(t *testing.T) {
-		// Wait a bit to ensure timestamp changes
-		time.Sleep(100 * time.Millisecond)
-
-		err := store.Heartbeat(ctx, db, consumerName, ownerID)
-		if err != nil {
-			t.Fatalf("Failed to send heartbeat: %v", err)
-		}
-
-		// Verify last_heartbeat was updated
-		segments, err := store.GetSegments(ctx, db, consumerName)
-		if err != nil {
-			t.Fatalf("Failed to get segments: %v", err)
-		}
-
-		seg0 := segments[0]
-		if seg0.LastHeartbeat == nil {
-			t.Fatal("Expected last_heartbeat to be set")
-		}
-
-		if !seg0.LastHeartbeat.After(firstHeartbeat) {
-			t.Errorf("Expected heartbeat to be updated: before=%v, after=%v",
-				firstHeartbeat, *seg0.LastHeartbeat)
-		}
-	})
-
-	t.Run("heartbeat only affects owned segments", func(t *testing.T) {
-		segments, err := store.GetSegments(ctx, db, consumerName)
-		if err != nil {
-			t.Fatalf("Failed to get segments: %v", err)
-		}
-
-		// Segments 1, 2, 3 should still be unclaimed
-		for i := 1; i < totalSegments; i++ {
-			if segments[i].LastHeartbeat != nil {
-				t.Errorf("Expected segment %d last_heartbeat=nil, got %v",
-					i, *segments[i].LastHeartbeat)
-			}
-		}
-	})
-}
-
 func TestSegmentStore_ReclaimStaleSegments(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
@@ -303,6 +219,12 @@ func TestSegmentStore_ReclaimStaleSegments(t *testing.T) {
 		t.Fatalf("Failed to initialize segments: %v", err)
 	}
 
+	// Register the worker in the registry
+	err = store.RegisterWorker(ctx, db, consumerName, ownerID)
+	if err != nil {
+		t.Fatalf("Failed to register worker: %v", err)
+	}
+
 	// Claim 2 segments
 	seg0, err := store.ClaimSegment(ctx, db, consumerName, ownerID)
 	if err != nil || seg0 == nil {
@@ -314,7 +236,7 @@ func TestSegmentStore_ReclaimStaleSegments(t *testing.T) {
 		t.Fatalf("Failed to claim segment 1: %v", err)
 	}
 
-	t.Run("reclaim with recent heartbeat does nothing", func(t *testing.T) {
+	t.Run("reclaim with active worker does nothing", func(t *testing.T) {
 		staleThreshold := 30 * time.Second
 		count, err := store.ReclaimStaleSegments(ctx, db, consumerName, staleThreshold)
 		if err != nil {
@@ -326,13 +248,13 @@ func TestSegmentStore_ReclaimStaleSegments(t *testing.T) {
 		}
 	})
 
-	t.Run("reclaim with old heartbeat releases segments", func(t *testing.T) {
-		// Manually set old heartbeat timestamp
+	t.Run("reclaim with stale worker releases segments", func(t *testing.T) {
+		// Manually set old heartbeat in the worker registry
 		oldTime := time.Now().Add(-60 * time.Second)
 		_, err := db.ExecContext(ctx, `
-			UPDATE consumer_segments 
+			UPDATE consumer_workers 
 			SET last_heartbeat = $1 
-			WHERE consumer_name = $2 AND owner_id = $3
+			WHERE consumer_name = $2 AND worker_id = $3
 		`, oldTime, consumerName, ownerID)
 		if err != nil {
 			t.Fatalf("Failed to set old heartbeat: %v", err)
@@ -358,10 +280,6 @@ func TestSegmentStore_ReclaimStaleSegments(t *testing.T) {
 			if segments[i].OwnerID != nil {
 				t.Errorf("Segment %d should be unclaimed, got owner_id=%v",
 					i, *segments[i].OwnerID)
-			}
-			if segments[i].LastHeartbeat != nil {
-				t.Errorf("Segment %d should have nil heartbeat, got %v",
-					i, *segments[i].LastHeartbeat)
 			}
 		}
 	})
@@ -798,6 +716,597 @@ func TestSegmentProcessor_OneOff_ErrorHandling(t *testing.T) {
 			t.Errorf("Expected error to contain 'simulated consumer error', got: %v", err)
 		}
 	})
+}
+
+func TestWorkerRegistry_RegisterAndCount(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	setupTestTables(t, db)
+
+	ctx := context.Background()
+	store := postgres.NewStore(postgres.DefaultStoreConfig())
+
+	consumerName := "test-registry-count"
+	staleThreshold := 30 * time.Second
+
+	t.Run("no workers initially", func(t *testing.T) {
+		count, err := store.CountActiveWorkers(ctx, db, consumerName, staleThreshold)
+		if err != nil {
+			t.Fatalf("CountActiveWorkers failed: %v", err)
+		}
+		if count != 0 {
+			t.Errorf("Expected 0 active workers, got %d", count)
+		}
+	})
+
+	t.Run("register three workers", func(t *testing.T) {
+		for _, wid := range []string{"w1", "w2", "w3"} {
+			if err := store.RegisterWorker(ctx, db, consumerName, wid); err != nil {
+				t.Fatalf("RegisterWorker(%s) failed: %v", wid, err)
+			}
+		}
+
+		count, err := store.CountActiveWorkers(ctx, db, consumerName, staleThreshold)
+		if err != nil {
+			t.Fatalf("CountActiveWorkers failed: %v", err)
+		}
+		if count != 3 {
+			t.Errorf("Expected 3 active workers, got %d", count)
+		}
+	})
+
+	t.Run("register is idempotent", func(t *testing.T) {
+		if err := store.RegisterWorker(ctx, db, consumerName, "w1"); err != nil {
+			t.Fatalf("Re-register w1 failed: %v", err)
+		}
+
+		count, err := store.CountActiveWorkers(ctx, db, consumerName, staleThreshold)
+		if err != nil {
+			t.Fatalf("CountActiveWorkers failed: %v", err)
+		}
+		if count != 3 {
+			t.Errorf("Expected 3 after re-register, got %d", count)
+		}
+	})
+
+	t.Run("different consumer is isolated", func(t *testing.T) {
+		if err := store.RegisterWorker(ctx, db, "other-consumer", "wx"); err != nil {
+			t.Fatalf("RegisterWorker failed: %v", err)
+		}
+
+		count, err := store.CountActiveWorkers(ctx, db, consumerName, staleThreshold)
+		if err != nil {
+			t.Fatalf("CountActiveWorkers failed: %v", err)
+		}
+		if count != 3 {
+			t.Errorf("Expected 3 (isolated from other consumer), got %d", count)
+		}
+	})
+}
+
+func TestWorkerRegistry_DeregisterReducesCount(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	setupTestTables(t, db)
+
+	ctx := context.Background()
+	store := postgres.NewStore(postgres.DefaultStoreConfig())
+
+	consumerName := "test-registry-deregister"
+	staleThreshold := 30 * time.Second
+
+	for _, wid := range []string{"w1", "w2", "w3"} {
+		if err := store.RegisterWorker(ctx, db, consumerName, wid); err != nil {
+			t.Fatalf("RegisterWorker(%s) failed: %v", wid, err)
+		}
+	}
+
+	t.Run("deregister one worker", func(t *testing.T) {
+		if err := store.DeregisterWorker(ctx, db, consumerName, "w2"); err != nil {
+			t.Fatalf("DeregisterWorker failed: %v", err)
+		}
+
+		count, err := store.CountActiveWorkers(ctx, db, consumerName, staleThreshold)
+		if err != nil {
+			t.Fatalf("CountActiveWorkers failed: %v", err)
+		}
+		if count != 2 {
+			t.Errorf("Expected 2 after deregister, got %d", count)
+		}
+	})
+
+	t.Run("deregister non-existent worker is no-op", func(t *testing.T) {
+		if err := store.DeregisterWorker(ctx, db, consumerName, "w99"); err != nil {
+			t.Fatalf("DeregisterWorker failed: %v", err)
+		}
+
+		count, err := store.CountActiveWorkers(ctx, db, consumerName, staleThreshold)
+		if err != nil {
+			t.Fatalf("CountActiveWorkers failed: %v", err)
+		}
+		if count != 2 {
+			t.Errorf("Expected 2 unchanged, got %d", count)
+		}
+	})
+}
+
+func TestWorkerRegistry_PurgeStaleWorkers(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	setupTestTables(t, db)
+
+	ctx := context.Background()
+	store := postgres.NewStore(postgres.DefaultStoreConfig())
+
+	consumerName := "test-registry-purge"
+	staleThreshold := 30 * time.Second
+
+	// Register 3 workers
+	for _, wid := range []string{"w1", "w2", "w3"} {
+		if err := store.RegisterWorker(ctx, db, consumerName, wid); err != nil {
+			t.Fatalf("RegisterWorker(%s) failed: %v", wid, err)
+		}
+	}
+
+	t.Run("purge with no stale workers removes nothing", func(t *testing.T) {
+		if err := store.PurgeStaleWorkers(ctx, db, consumerName, staleThreshold); err != nil {
+			t.Fatalf("PurgeStaleWorkers failed: %v", err)
+		}
+
+		count, err := store.CountActiveWorkers(ctx, db, consumerName, staleThreshold)
+		if err != nil {
+			t.Fatalf("CountActiveWorkers failed: %v", err)
+		}
+		if count != 3 {
+			t.Errorf("Expected 3 (none purged), got %d", count)
+		}
+	})
+
+	t.Run("purge removes stale workers only", func(t *testing.T) {
+		// Make w1 and w2 stale
+		oldTime := time.Now().Add(-60 * time.Second)
+		_, err := db.ExecContext(ctx, `
+			UPDATE consumer_workers 
+			SET last_heartbeat = $1 
+			WHERE consumer_name = $2 AND worker_id IN ($3, $4)
+		`, oldTime, consumerName, "w1", "w2")
+		if err != nil {
+			t.Fatalf("Failed to set old heartbeat: %v", err)
+		}
+
+		if err := store.PurgeStaleWorkers(ctx, db, consumerName, staleThreshold); err != nil {
+			t.Fatalf("PurgeStaleWorkers failed: %v", err)
+		}
+
+		// Only w3 should remain
+		count, err := store.CountActiveWorkers(ctx, db, consumerName, staleThreshold)
+		if err != nil {
+			t.Fatalf("CountActiveWorkers failed: %v", err)
+		}
+		if count != 1 {
+			t.Errorf("Expected 1 (only w3 fresh), got %d", count)
+		}
+
+		// Verify w1 and w2 rows are actually deleted
+		var totalRows int
+		err = db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM consumer_workers WHERE consumer_name = $1`,
+			consumerName).Scan(&totalRows)
+		if err != nil {
+			t.Fatalf("Failed to count rows: %v", err)
+		}
+		if totalRows != 1 {
+			t.Errorf("Expected 1 row remaining, got %d", totalRows)
+		}
+	})
+}
+
+//nolint:gocyclo // Integration test intentionally tests multi-worker rebalancing scenarios
+func TestTwoWorkerRebalance(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	setupTestTables(t, db)
+
+	ctx := context.Background()
+	store := postgres.NewStore(postgres.DefaultStoreConfig())
+
+	consumerName := "test-two-worker-rebalance"
+	totalSegments := 16
+	staleThreshold := 30 * time.Second
+	w1 := "worker-1"
+	w2 := "worker-2"
+
+	// Initialize segments and register W1 with all 16 segments
+	if err := store.InitializeSegments(ctx, db, consumerName, totalSegments); err != nil {
+		t.Fatalf("InitializeSegments failed: %v", err)
+	}
+	if err := store.RegisterWorker(ctx, db, consumerName, w1); err != nil {
+		t.Fatalf("RegisterWorker(w1) failed: %v", err)
+	}
+
+	for i := 0; i < totalSegments; i++ {
+		seg, err := store.ClaimSegment(ctx, db, consumerName, w1)
+		if err != nil || seg == nil {
+			t.Fatalf("ClaimSegment %d for w1 failed: %v", i, err)
+		}
+	}
+
+	// Verify W1 owns all 16
+	segments, err := store.GetSegments(ctx, db, consumerName)
+	if err != nil {
+		t.Fatalf("GetSegments failed: %v", err)
+	}
+	for _, seg := range segments {
+		if seg.OwnerID == nil || *seg.OwnerID != w1 {
+			t.Fatalf("Expected w1 to own all segments initially")
+		}
+	}
+
+	// W2 registers (simulating a new worker joining)
+	if err := store.RegisterWorker(ctx, db, consumerName, w2); err != nil {
+		t.Fatalf("RegisterWorker(w2) failed: %v", err)
+	}
+
+	// Both workers see 2 active workers
+	count, err := store.CountActiveWorkers(ctx, db, consumerName, staleThreshold)
+	if err != nil {
+		t.Fatalf("CountActiveWorkers failed: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("Expected 2 active workers, got %d", count)
+	}
+
+	// Calculate fair share: ceil(16 / 2) = 8
+	fairShare := (totalSegments + count - 1) / count
+	if fairShare != 8 {
+		t.Fatalf("Expected fair share = 8, got %d", fairShare)
+	}
+
+	// W1 releases excess (has 16, fair share is 8)
+	w1Owned := 0
+	for _, seg := range segments {
+		if seg.OwnerID != nil && *seg.OwnerID == w1 {
+			w1Owned++
+		}
+	}
+
+	released := 0
+	for _, seg := range segments {
+		if w1Owned <= fairShare {
+			break
+		}
+		if seg.OwnerID != nil && *seg.OwnerID == w1 {
+			if err := store.ReleaseSegment(ctx, db, consumerName, seg.SegmentID, w1); err != nil {
+				t.Fatalf("ReleaseSegment failed: %v", err)
+			}
+			released++
+			w1Owned--
+		}
+	}
+
+	if released != 8 {
+		t.Errorf("Expected W1 to release 8, released %d", released)
+	}
+
+	// W2 claims available segments
+	w2Claimed := 0
+	for w2Claimed < fairShare {
+		seg, err := store.ClaimSegment(ctx, db, consumerName, w2)
+		if err != nil {
+			t.Fatalf("ClaimSegment for w2 failed: %v", err)
+		}
+		if seg == nil {
+			break
+		}
+		w2Claimed++
+	}
+
+	if w2Claimed != 8 {
+		t.Errorf("Expected W2 to claim 8, claimed %d", w2Claimed)
+	}
+
+	// Verify final distribution: 8/8
+	segments, err = store.GetSegments(ctx, db, consumerName)
+	if err != nil {
+		t.Fatalf("GetSegments failed: %v", err)
+	}
+
+	w1Count, w2Count := 0, 0
+	for _, seg := range segments {
+		if seg.OwnerID == nil {
+			continue
+		}
+		switch *seg.OwnerID {
+		case w1:
+			w1Count++
+		case w2:
+			w2Count++
+		}
+	}
+
+	if w1Count != 8 || w2Count != 8 {
+		t.Errorf("Expected 8/8 distribution, got W1=%d W2=%d", w1Count, w2Count)
+	}
+}
+
+func TestWorkerGracefulShutdown(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	setupTestTables(t, db)
+
+	ctx := context.Background()
+	store := postgres.NewStore(postgres.DefaultStoreConfig())
+
+	consumerName := "test-graceful-shutdown"
+	totalSegments := 8
+	staleThreshold := 30 * time.Second
+	w1 := "worker-1"
+	w2 := "worker-2"
+
+	// Setup: 2 workers, 4 segments each
+	if err := store.InitializeSegments(ctx, db, consumerName, totalSegments); err != nil {
+		t.Fatalf("InitializeSegments failed: %v", err)
+	}
+	if err := store.RegisterWorker(ctx, db, consumerName, w1); err != nil {
+		t.Fatalf("RegisterWorker(w1) failed: %v", err)
+	}
+	if err := store.RegisterWorker(ctx, db, consumerName, w2); err != nil {
+		t.Fatalf("RegisterWorker(w2) failed: %v", err)
+	}
+
+	// W1 claims 4, W2 claims 4
+	for i := 0; i < 4; i++ {
+		if _, err := store.ClaimSegment(ctx, db, consumerName, w1); err != nil {
+			t.Fatalf("ClaimSegment for w1 failed: %v", err)
+		}
+	}
+	for i := 0; i < 4; i++ {
+		if _, err := store.ClaimSegment(ctx, db, consumerName, w2); err != nil {
+			t.Fatalf("ClaimSegment for w2 failed: %v", err)
+		}
+	}
+
+	// W2 gracefully shuts down: release all segments + deregister
+	segments, err := store.GetSegments(ctx, db, consumerName)
+	if err != nil {
+		t.Fatalf("GetSegments failed: %v", err)
+	}
+	for _, seg := range segments {
+		if seg.OwnerID != nil && *seg.OwnerID == w2 {
+			if err := store.ReleaseSegment(ctx, db, consumerName, seg.SegmentID, w2); err != nil {
+				t.Fatalf("ReleaseSegment for w2 failed: %v", err)
+			}
+		}
+	}
+	if err := store.DeregisterWorker(ctx, db, consumerName, w2); err != nil {
+		t.Fatalf("DeregisterWorker(w2) failed: %v", err)
+	}
+
+	// W1 sees 1 active worker and claims the 4 released segments
+	count, err := store.CountActiveWorkers(ctx, db, consumerName, staleThreshold)
+	if err != nil {
+		t.Fatalf("CountActiveWorkers failed: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("Expected 1 active worker after w2 deregister, got %d", count)
+	}
+
+	w1Claimed := 0
+	for {
+		seg, err := store.ClaimSegment(ctx, db, consumerName, w1)
+		if err != nil {
+			t.Fatalf("ClaimSegment for w1 failed: %v", err)
+		}
+		if seg == nil {
+			break
+		}
+		w1Claimed++
+	}
+
+	if w1Claimed != 4 {
+		t.Errorf("Expected W1 to claim 4 released segments, claimed %d", w1Claimed)
+	}
+
+	// Verify W1 owns all 8
+	segments, err = store.GetSegments(ctx, db, consumerName)
+	if err != nil {
+		t.Fatalf("GetSegments failed: %v", err)
+	}
+	for _, seg := range segments {
+		if seg.OwnerID == nil || *seg.OwnerID != w1 {
+			t.Errorf("Segment %d should be owned by w1, got %v", seg.SegmentID, seg.OwnerID)
+		}
+	}
+}
+
+func TestWorkerCrashRecovery(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	setupTestTables(t, db)
+
+	ctx := context.Background()
+	store := postgres.NewStore(postgres.DefaultStoreConfig())
+
+	consumerName := "test-crash-recovery"
+	totalSegments := 8
+	staleThreshold := 30 * time.Second
+	w1 := "worker-1"
+	w2 := "worker-2"
+
+	// Setup: 2 workers, 4 segments each
+	if err := store.InitializeSegments(ctx, db, consumerName, totalSegments); err != nil {
+		t.Fatalf("InitializeSegments failed: %v", err)
+	}
+	if err := store.RegisterWorker(ctx, db, consumerName, w1); err != nil {
+		t.Fatalf("RegisterWorker(w1) failed: %v", err)
+	}
+	if err := store.RegisterWorker(ctx, db, consumerName, w2); err != nil {
+		t.Fatalf("RegisterWorker(w2) failed: %v", err)
+	}
+
+	for i := 0; i < 4; i++ {
+		if _, err := store.ClaimSegment(ctx, db, consumerName, w1); err != nil {
+			t.Fatalf("ClaimSegment for w1 failed: %v", err)
+		}
+	}
+	for i := 0; i < 4; i++ {
+		if _, err := store.ClaimSegment(ctx, db, consumerName, w2); err != nil {
+			t.Fatalf("ClaimSegment for w2 failed: %v", err)
+		}
+	}
+
+	// W2 crashes — simulate by making its heartbeat stale (no deregister, no release)
+	oldTime := time.Now().Add(-60 * time.Second)
+	_, err := db.ExecContext(ctx, `
+		UPDATE consumer_workers 
+		SET last_heartbeat = $1 
+		WHERE consumer_name = $2 AND worker_id = $3
+	`, oldTime, consumerName, w2)
+	if err != nil {
+		t.Fatalf("Failed to set stale heartbeat: %v", err)
+	}
+
+	// W1 runs rebalance cycle: purge stale workers, reclaim stale segments
+	if err := store.PurgeStaleWorkers(ctx, db, consumerName, staleThreshold); err != nil {
+		t.Fatalf("PurgeStaleWorkers failed: %v", err)
+	}
+
+	reclaimed, err := store.ReclaimStaleSegments(ctx, db, consumerName, staleThreshold)
+	if err != nil {
+		t.Fatalf("ReclaimStaleSegments failed: %v", err)
+	}
+	if reclaimed != 4 {
+		t.Errorf("Expected 4 reclaimed segments, got %d", reclaimed)
+	}
+
+	// W1 now sees 1 active worker
+	count, err := store.CountActiveWorkers(ctx, db, consumerName, staleThreshold)
+	if err != nil {
+		t.Fatalf("CountActiveWorkers failed: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("Expected 1 active worker after purge, got %d", count)
+	}
+
+	// W1 claims the 4 reclaimed segments
+	w1Claimed := 0
+	for {
+		seg, err := store.ClaimSegment(ctx, db, consumerName, w1)
+		if err != nil {
+			t.Fatalf("ClaimSegment for w1 failed: %v", err)
+		}
+		if seg == nil {
+			break
+		}
+		w1Claimed++
+	}
+
+	if w1Claimed != 4 {
+		t.Errorf("Expected W1 to claim 4 reclaimed segments, claimed %d", w1Claimed)
+	}
+}
+
+func TestConcurrentWorkerJoin(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	setupTestTables(t, db)
+
+	ctx := context.Background()
+	store := postgres.NewStore(postgres.DefaultStoreConfig())
+
+	consumerName := "test-concurrent-join"
+	totalSegments := 16
+	staleThreshold := 30 * time.Second
+	workerCount := 4
+
+	if err := store.InitializeSegments(ctx, db, consumerName, totalSegments); err != nil {
+		t.Fatalf("InitializeSegments failed: %v", err)
+	}
+
+	// 4 workers register simultaneously
+	var wg sync.WaitGroup
+	errs := make([]error, workerCount)
+
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			wid := fmt.Sprintf("worker-%d", idx)
+			errs[idx] = store.RegisterWorker(ctx, db, consumerName, wid)
+		}(i)
+	}
+
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("RegisterWorker(worker-%d) failed: %v", i, err)
+		}
+	}
+
+	count, err := store.CountActiveWorkers(ctx, db, consumerName, staleThreshold)
+	if err != nil {
+		t.Fatalf("CountActiveWorkers failed: %v", err)
+	}
+	if count != workerCount {
+		t.Errorf("Expected %d active workers, got %d", workerCount, count)
+	}
+
+	// Each worker claims its fair share (4 each)
+	fairShare := totalSegments / workerCount
+
+	claimed := make([]int, workerCount)
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			wid := fmt.Sprintf("worker-%d", idx)
+			for c := 0; c < fairShare; c++ {
+				seg, err := store.ClaimSegment(ctx, db, consumerName, wid)
+				if err != nil {
+					t.Errorf("ClaimSegment for %s failed: %v", wid, err)
+					return
+				}
+				if seg != nil {
+					claimed[idx]++
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify all 16 segments are claimed
+	segments, err := store.GetSegments(ctx, db, consumerName)
+	if err != nil {
+		t.Fatalf("GetSegments failed: %v", err)
+	}
+
+	ownedCount := 0
+	for _, seg := range segments {
+		if seg.OwnerID != nil {
+			ownedCount++
+		}
+	}
+
+	if ownedCount != totalSegments {
+		t.Errorf("Expected all %d segments claimed, got %d", totalSegments, ownedCount)
+	}
+
+	totalClaimed := 0
+	for _, c := range claimed {
+		totalClaimed += c
+	}
+	if totalClaimed != totalSegments {
+		t.Errorf("Expected %d total claims, got %d", totalSegments, totalClaimed)
+	}
 }
 
 // testConsumer is a simple consumer implementation for testing

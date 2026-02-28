@@ -34,9 +34,10 @@ type SegmentProcessorConfig struct {
 	// Default: 5s
 	HeartbeatInterval time.Duration
 
-	// StaleThreshold is how long a segment can go without a heartbeat before
-	// it is considered abandoned and eligible for reclaim by other workers.
-	// Must be significantly greater than HeartbeatInterval.
+	// StaleThreshold is how long a worker's registry entry can go without a
+	// heartbeat refresh before it is considered crashed and its segments are
+	// eligible for reclaim by other workers. Must be significantly greater
+	// than HeartbeatInterval.
 	// Default: 30s
 	StaleThreshold time.Duration
 

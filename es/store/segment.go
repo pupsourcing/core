@@ -50,11 +50,9 @@ import (
 )
 
 // Segment represents a consumer segment in a distributed event processing system.
-// Each segment tracks ownership, processing position, and heartbeat status for
-// a partition of the event stream.
+// Each segment tracks ownership and processing position for a partition of the event stream.
 type Segment struct {
-	OwnerID       *string    // nil = unclaimed
-	LastHeartbeat *time.Time // nil if never heartbeated
+	OwnerID       *string // nil = unclaimed
 	ConsumerName  string
 	Checkpoint    int64
 	SegmentID     int
@@ -115,28 +113,17 @@ type SegmentStore interface {
 	// Workers should call this during graceful shutdown or when rebalancing segments.
 	ReleaseSegment(ctx context.Context, tx es.DBTX, consumerName string, segmentID int, ownerID string) error
 
-	// Heartbeat updates last_heartbeat for all segments owned by this owner.
-	// This prevents the segments from being reclaimed as stale by other workers.
-	//
-	// Parameters:
-	// - consumerName: the logical consumer name
-	// - ownerID: the owner sending the heartbeat
-	//
-	// Workers should call this method periodically (e.g., every 5-10 seconds)
-	// to maintain ownership of their claimed segments.
-	Heartbeat(ctx context.Context, tx es.DBTX, consumerName, ownerID string) error
-
-	// ReclaimStaleSegments releases segments whose heartbeat is older than the threshold.
-	// Returns the number of segments reclaimed.
+	// ReclaimStaleSegments releases segments owned by workers whose registry heartbeat
+	// has expired. Returns the number of segments reclaimed.
 	//
 	// The reclaim operation:
-	// - Finds segments where (now - last_heartbeat) > staleThreshold
+	// - Finds segments owned by workers NOT present in the active worker registry
 	// - Sets OwnerID to nil for those segments
 	// - Preserves checkpoints so processing can resume
 	//
 	// Parameters:
 	// - consumerName: the logical consumer name
-	// - staleThreshold: age threshold for considering a segment stale (e.g., 30 seconds)
+	// - staleThreshold: age threshold for considering a worker stale (e.g., 30 seconds)
 	//
 	// Returns:
 	// - The count of segments that were reclaimed
@@ -182,4 +169,47 @@ type SegmentStore interface {
 	// Workers should call this method after successfully processing each batch
 	// of events to enable resumption from the correct position after restarts.
 	UpdateSegmentCheckpoint(ctx context.Context, tx es.DBTX, consumerName string, segmentID int, position int64) error
+
+	// --- Worker Registry ---
+	// The worker registry tracks active worker instances for fair-share calculations.
+	// Workers register on startup and heartbeat periodically by re-registering (UPSERT).
+	// This solves the "newcomer invisibility" problem: a new worker with 0 segments
+	// is immediately visible to incumbents through the registry.
+
+	// RegisterWorker registers (or refreshes) a worker in the registry.
+	// This is an UPSERT operation: inserts a new entry or updates last_heartbeat.
+	// Called on startup and on every heartbeat tick.
+	//
+	// Parameters:
+	// - consumerName: the logical consumer name
+	// - workerID: unique identifier for the worker instance
+	RegisterWorker(ctx context.Context, tx es.DBTX, consumerName, workerID string) error
+
+	// DeregisterWorker removes a worker from the registry.
+	// Called during graceful shutdown.
+	//
+	// Parameters:
+	// - consumerName: the logical consumer name
+	// - workerID: unique identifier for the worker instance
+	DeregisterWorker(ctx context.Context, tx es.DBTX, consumerName, workerID string) error
+
+	// CountActiveWorkers returns the number of workers with fresh heartbeats.
+	// Used by calculateFairShare to determine how many segments each worker should own.
+	//
+	// Parameters:
+	// - consumerName: the logical consumer name
+	// - staleThreshold: workers with heartbeats older than this are excluded
+	//
+	// Returns:
+	// - The count of active workers (always >= 1, as the caller counts itself)
+	// - error if the operation fails
+	CountActiveWorkers(ctx context.Context, tx es.DBTX, consumerName string, staleThreshold time.Duration) (int, error)
+
+	// PurgeStaleWorkers removes registry entries with expired heartbeats.
+	// Called during rebalance to clean up crashed workers.
+	//
+	// Parameters:
+	// - consumerName: the logical consumer name
+	// - staleThreshold: workers with heartbeats older than this are removed
+	PurgeStaleWorkers(ctx context.Context, tx es.DBTX, consumerName string, staleThreshold time.Duration) error
 }

@@ -32,6 +32,9 @@ type StoreConfig struct {
 
 	// SegmentsTable is the name of the consumer segments table
 	SegmentsTable string
+
+	// WorkerRegistryTable is the name of the worker registry table
+	WorkerRegistryTable string
 }
 
 // DefaultStoreConfig returns the default configuration.
@@ -41,6 +44,7 @@ func DefaultStoreConfig() *StoreConfig {
 		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
 		SegmentsTable:       "consumer_segments",
+		WorkerRegistryTable: "consumer_workers",
 		Logger:              nil, // No logging by default
 	}
 }
@@ -80,6 +84,13 @@ func WithAggregateHeadsTable(tableName string) StoreOption {
 func WithSegmentsTable(tableName string) StoreOption {
 	return func(c *StoreConfig) {
 		c.SegmentsTable = tableName
+	}
+}
+
+// WithWorkerRegistryTable sets a custom worker registry table name.
+func WithWorkerRegistryTable(tableName string) StoreOption {
+	return func(c *StoreConfig) {
+		c.WorkerRegistryTable = tableName
 	}
 }
 

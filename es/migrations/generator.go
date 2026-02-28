@@ -27,6 +27,9 @@ type Config struct {
 
 	// SegmentsTable is the name of the consumer segments table
 	SegmentsTable string
+
+	// WorkerRegistryTable is the name of the worker registry table
+	WorkerRegistryTable string
 }
 
 // DefaultConfig returns the default configuration.
@@ -39,6 +42,7 @@ func DefaultConfig() Config {
 		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
 		SegmentsTable:       "consumer_segments",
+		WorkerRegistryTable: "consumer_workers",
 	}
 }
 
@@ -132,13 +136,21 @@ CREATE TABLE IF NOT EXISTS %s (
     total_segments INT NOT NULL,
     owner_id TEXT,
     checkpoint BIGINT NOT NULL DEFAULT 0,
-    last_heartbeat TIMESTAMPTZ,
     PRIMARY KEY (consumer_name, segment_id)
 );
 
 -- Index for stale segment cleanup and fair-share queries
 CREATE INDEX IF NOT EXISTS idx_%s_owner
     ON %s (consumer_name, owner_id);
+
+-- Worker registry table for tracking active worker instances
+-- Used for fair-share calculations and stale worker detection
+CREATE TABLE IF NOT EXISTS %s (
+    consumer_name TEXT NOT NULL,
+    worker_id TEXT NOT NULL,
+    last_heartbeat TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (consumer_name, worker_id)
+);
 `,
 		time.Now().Format(time.RFC3339),
 		config.EventsTable,
@@ -151,6 +163,7 @@ CREATE INDEX IF NOT EXISTS idx_%s_owner
 		config.CheckpointsTable, config.CheckpointsTable,
 		config.SegmentsTable,
 		config.SegmentsTable, config.SegmentsTable,
+		config.WorkerRegistryTable,
 	)
 }
 
@@ -244,13 +257,21 @@ CREATE TABLE IF NOT EXISTS %s (
     total_segments INTEGER NOT NULL,
     owner_id TEXT,
     checkpoint INTEGER NOT NULL DEFAULT 0,
-    last_heartbeat TEXT,
     PRIMARY KEY (consumer_name, segment_id)
 );
 
 -- Index for stale segment cleanup and fair-share queries
 CREATE INDEX IF NOT EXISTS idx_%s_owner
     ON %s (consumer_name, owner_id);
+
+-- Worker registry table for tracking active worker instances
+-- Used for fair-share calculations and stale worker detection
+CREATE TABLE IF NOT EXISTS %s (
+    consumer_name TEXT NOT NULL,
+    worker_id TEXT NOT NULL,
+    last_heartbeat TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (consumer_name, worker_id)
+);
 `,
 		time.Now().Format(time.RFC3339),
 		config.EventsTable,
@@ -263,6 +284,7 @@ CREATE INDEX IF NOT EXISTS idx_%s_owner
 		config.CheckpointsTable, config.CheckpointsTable,
 		config.SegmentsTable,
 		config.SegmentsTable, config.SegmentsTable,
+		config.WorkerRegistryTable,
 	)
 }
 
@@ -356,13 +378,21 @@ CREATE TABLE IF NOT EXISTS %s (
     total_segments INT NOT NULL,
     owner_id VARCHAR(255),
     checkpoint BIGINT NOT NULL DEFAULT 0,
-    last_heartbeat TIMESTAMP(6) NULL,
     PRIMARY KEY (consumer_name, segment_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Index for stale segment cleanup and fair-share queries
 CREATE INDEX idx_%s_owner
     ON %s (consumer_name, owner_id);
+
+-- Worker registry table for tracking active worker instances
+-- Used for fair-share calculations and stale worker detection
+CREATE TABLE IF NOT EXISTS %s (
+    consumer_name VARCHAR(255) NOT NULL,
+    worker_id VARCHAR(255) NOT NULL,
+    last_heartbeat TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (consumer_name, worker_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `,
 		time.Now().Format(time.RFC3339),
 		config.EventsTable,
@@ -375,5 +405,6 @@ CREATE INDEX idx_%s_owner
 		config.CheckpointsTable, config.CheckpointsTable,
 		config.SegmentsTable,
 		config.SegmentsTable, config.SegmentsTable,
+		config.WorkerRegistryTable,
 	)
 }

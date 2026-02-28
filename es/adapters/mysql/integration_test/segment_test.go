@@ -224,10 +224,6 @@ func TestSegmentStore_ClaimAndRelease(t *testing.T) {
 		t.Errorf("Expected consumer_name %s, got %s", consumerName, segment.ConsumerName)
 	}
 
-	if segment.LastHeartbeat == nil {
-		t.Error("Expected last_heartbeat to be set, got nil")
-	}
-
 	// Release the segment
 	tx3, _ := db.BeginTx(ctx, nil)
 	err = store.ReleaseSegment(ctx, tx3, consumerName, segment.SegmentID, ownerID)
@@ -248,10 +244,6 @@ func TestSegmentStore_ClaimAndRelease(t *testing.T) {
 	releasedSegment := segments[segment.SegmentID]
 	if releasedSegment.OwnerID != nil {
 		t.Errorf("Expected segment to be unclaimed after release, got owner_id %s", *releasedSegment.OwnerID)
-	}
-
-	if releasedSegment.LastHeartbeat != nil {
-		t.Error("Expected last_heartbeat to be nil after release")
 	}
 }
 
@@ -322,7 +314,7 @@ func TestSegmentStore_ClaimAllSegments(t *testing.T) {
 	}
 }
 
-func TestSegmentStore_Heartbeat(t *testing.T) {
+func TestSegmentStore_WorkerRegistry(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -330,63 +322,78 @@ func TestSegmentStore_Heartbeat(t *testing.T) {
 
 	ctx := context.Background()
 	store := mysql.NewStore(mysql.DefaultStoreConfig())
-	consumerName := "test_consumer_heartbeat"
-	ownerID := uuid.New().String()
+	consumerName := "test_consumer_registry"
+	workerID := uuid.New().String()
 
-	// Initialize and claim a segment
-	tx1, _ := db.BeginTx(ctx, nil)
-	err := store.InitializeSegments(ctx, tx1, consumerName, 2)
-	if err != nil {
-		t.Fatalf("InitializeSegments() failed: %v", err)
-	}
-	tx1.Commit()
+	t.Run("register and count workers", func(t *testing.T) {
+		tx1, _ := db.BeginTx(ctx, nil)
+		err := store.RegisterWorker(ctx, tx1, consumerName, workerID)
+		if err != nil {
+			t.Fatalf("RegisterWorker() failed: %v", err)
+		}
+		tx1.Commit()
 
-	tx2, _ := db.BeginTx(ctx, nil)
-	segment, err := store.ClaimSegment(ctx, tx2, consumerName, ownerID)
-	if err != nil {
-		t.Fatalf("ClaimSegment() failed: %v", err)
-	}
-	tx2.Commit()
+		tx2, _ := db.BeginTx(ctx, nil)
+		count, err := store.CountActiveWorkers(ctx, tx2, consumerName, 30*time.Second)
+		if err != nil {
+			t.Fatalf("CountActiveWorkers() failed: %v", err)
+		}
+		tx2.Commit()
 
-	if segment == nil {
-		t.Fatal("Expected segment to be claimed, got nil")
-	}
+		if count != 1 {
+			t.Errorf("Expected 1 active worker, got %d", count)
+		}
+	})
 
-	initialHeartbeat := segment.LastHeartbeat
+	t.Run("deregister reduces count", func(t *testing.T) {
+		tx1, _ := db.BeginTx(ctx, nil)
+		err := store.DeregisterWorker(ctx, tx1, consumerName, workerID)
+		if err != nil {
+			t.Fatalf("DeregisterWorker() failed: %v", err)
+		}
+		tx1.Commit()
 
-	// Wait a bit to ensure timestamp will be different
-	time.Sleep(100 * time.Millisecond)
+		tx2, _ := db.BeginTx(ctx, nil)
+		count, err := store.CountActiveWorkers(ctx, tx2, consumerName, 30*time.Second)
+		if err != nil {
+			t.Fatalf("CountActiveWorkers() failed: %v", err)
+		}
+		tx2.Commit()
 
-	// Send heartbeat
-	tx3, _ := db.BeginTx(ctx, nil)
-	err = store.Heartbeat(ctx, tx3, consumerName, ownerID)
-	if err != nil {
-		t.Fatalf("Heartbeat() failed: %v", err)
-	}
-	tx3.Commit()
+		if count != 0 {
+			t.Errorf("Expected 0 active workers after deregister, got %d", count)
+		}
+	})
 
-	// Verify heartbeat was updated
-	tx4, _ := db.BeginTx(ctx, nil)
-	defer tx4.Rollback()
+	t.Run("register is upsert (idempotent)", func(t *testing.T) {
+		tx1, _ := db.BeginTx(ctx, nil)
+		err := store.RegisterWorker(ctx, tx1, consumerName, workerID)
+		if err != nil {
+			t.Fatalf("First RegisterWorker() failed: %v", err)
+		}
+		tx1.Commit()
 
-	segments, err := store.GetSegments(ctx, tx4, consumerName)
-	if err != nil {
-		t.Fatalf("Failed to get segments: %v", err)
-	}
+		// Wait a bit
+		time.Sleep(50 * time.Millisecond)
 
-	updatedSegment := segments[segment.SegmentID]
-	if updatedSegment.LastHeartbeat == nil {
-		t.Fatal("Expected last_heartbeat to be set after heartbeat, got nil")
-	}
+		tx2, _ := db.BeginTx(ctx, nil)
+		err = store.RegisterWorker(ctx, tx2, consumerName, workerID)
+		if err != nil {
+			t.Fatalf("Second RegisterWorker() failed: %v", err)
+		}
+		tx2.Commit()
 
-	if initialHeartbeat == nil {
-		t.Fatal("Initial heartbeat was nil")
-	}
+		tx3, _ := db.BeginTx(ctx, nil)
+		count, err := store.CountActiveWorkers(ctx, tx3, consumerName, 30*time.Second)
+		if err != nil {
+			t.Fatalf("CountActiveWorkers() failed: %v", err)
+		}
+		tx3.Commit()
 
-	if !updatedSegment.LastHeartbeat.After(*initialHeartbeat) {
-		t.Errorf("Expected heartbeat to be updated. Initial: %v, Updated: %v",
-			initialHeartbeat, updatedSegment.LastHeartbeat)
-	}
+		if count != 1 {
+			t.Errorf("Expected 1 active worker after double register, got %d", count)
+		}
+	})
 }
 
 func TestSegmentStore_ReclaimStaleSegments(t *testing.T) {
@@ -400,13 +407,20 @@ func TestSegmentStore_ReclaimStaleSegments(t *testing.T) {
 	consumerName := "test_consumer_reclaim"
 	ownerID := uuid.New().String()
 
-	// Initialize and claim segments
+	// Initialize and register the worker
 	tx1, _ := db.BeginTx(ctx, nil)
 	err := store.InitializeSegments(ctx, tx1, consumerName, 3)
 	if err != nil {
 		t.Fatalf("InitializeSegments() failed: %v", err)
 	}
 	tx1.Commit()
+
+	tx1b, _ := db.BeginTx(ctx, nil)
+	err = store.RegisterWorker(ctx, tx1b, consumerName, ownerID)
+	if err != nil {
+		t.Fatalf("RegisterWorker() failed: %v", err)
+	}
+	tx1b.Commit()
 
 	// Claim all 3 segments
 	for i := 0; i < 3; i++ {
@@ -418,12 +432,11 @@ func TestSegmentStore_ReclaimStaleSegments(t *testing.T) {
 		tx.Commit()
 	}
 
-	// Manually set last_heartbeat to an old timestamp to simulate stale segments
-	// MySQL uses NOW(6) for microsecond precision
+	// Manually set worker's heartbeat to an old timestamp to simulate stale worker
 	_, err = db.ExecContext(ctx, `
-		UPDATE consumer_segments
+		UPDATE consumer_workers
 		SET last_heartbeat = NOW(6) - INTERVAL 60 SECOND
-		WHERE consumer_name = ? AND owner_id = ?
+		WHERE consumer_name = ? AND worker_id = ?
 	`, consumerName, ownerID)
 	if err != nil {
 		t.Fatalf("Failed to set stale heartbeat: %v", err)
@@ -454,9 +467,6 @@ func TestSegmentStore_ReclaimStaleSegments(t *testing.T) {
 		if seg.OwnerID != nil {
 			t.Errorf("Segment %d: expected to be unclaimed after reclaim, got owner_id %s", i, *seg.OwnerID)
 		}
-		if seg.LastHeartbeat != nil {
-			t.Errorf("Segment %d: expected last_heartbeat to be nil after reclaim", i)
-		}
 	}
 }
 
@@ -471,13 +481,20 @@ func TestSegmentStore_ReclaimStaleSegments_NotStale(t *testing.T) {
 	consumerName := "test_consumer_not_stale"
 	ownerID := uuid.New().String()
 
-	// Initialize and claim segment
+	// Initialize and register worker
 	tx1, _ := db.BeginTx(ctx, nil)
 	err := store.InitializeSegments(ctx, tx1, consumerName, 2)
 	if err != nil {
 		t.Fatalf("InitializeSegments() failed: %v", err)
 	}
 	tx1.Commit()
+
+	tx1b, _ := db.BeginTx(ctx, nil)
+	err = store.RegisterWorker(ctx, tx1b, consumerName, ownerID)
+	if err != nil {
+		t.Fatalf("RegisterWorker() failed: %v", err)
+	}
+	tx1b.Commit()
 
 	tx2, _ := db.BeginTx(ctx, nil)
 	_, err = store.ClaimSegment(ctx, tx2, consumerName, ownerID)
@@ -486,7 +503,7 @@ func TestSegmentStore_ReclaimStaleSegments_NotStale(t *testing.T) {
 	}
 	tx2.Commit()
 
-	// Try to reclaim with a short threshold (should not reclaim)
+	// Try to reclaim with threshold (should not reclaim since worker is active)
 	tx3, _ := db.BeginTx(ctx, nil)
 	reclaimed, err := store.ReclaimStaleSegments(ctx, tx3, consumerName, 10*time.Second)
 	if err != nil {

@@ -68,6 +68,11 @@ func (p *SegmentProcessor) Run(ctx context.Context, cons consumer.Consumer) erro
 		return fmt.Errorf("failed to initialize segments: %w", err)
 	}
 
+	// Register this worker in the registry (makes it visible for fair-share calculations)
+	if err := p.store.RegisterWorker(ctx, p.db, cons.Name(), p.ownerID); err != nil {
+		return fmt.Errorf("failed to register worker: %w", err)
+	}
+
 	// Build filters once
 	aggregateTypeFilter := buildAggregateTypeFilter(cons)
 	boundedContextFilter := buildBoundedContextFilter(cons)
@@ -92,6 +97,7 @@ func (p *SegmentProcessor) Run(ctx context.Context, cons consumer.Consumer) erro
 		err := p.runOneOff(ctx, cons, aggregateTypeFilter, boundedContextFilter, &workersMu, workers, workerErrCh)
 		cancelHeartbeat()
 		<-heartbeatDone
+		p.deregisterWorker(ctx, cons.Name())
 		return err
 	}
 
@@ -104,6 +110,7 @@ func (p *SegmentProcessor) Run(ctx context.Context, cons consumer.Consumer) erro
 		cancelHeartbeat()
 		<-heartbeatDone
 		p.stopAllWorkers(&workersMu, workers)
+		p.deregisterWorker(ctx, cons.Name())
 		return err
 	}
 
@@ -119,6 +126,7 @@ func (p *SegmentProcessor) Run(ctx context.Context, cons consumer.Consumer) erro
 			<-heartbeatDone
 			p.stopAllWorkers(&workersMu, workers)
 			p.releaseAllSegments(context.Background(), cons.Name())
+			p.deregisterWorker(context.Background(), cons.Name())
 			return ctx.Err()
 
 		case err := <-workerErrCh:
@@ -131,6 +139,7 @@ func (p *SegmentProcessor) Run(ctx context.Context, cons consumer.Consumer) erro
 			<-heartbeatDone
 			p.stopAllWorkers(&workersMu, workers)
 			p.releaseAllSegments(context.Background(), cons.Name())
+			p.deregisterWorker(context.Background(), cons.Name())
 			return fmt.Errorf("%w: %v", ErrConsumerStopped, err)
 
 		case <-rebalanceTicker.C:
@@ -139,6 +148,7 @@ func (p *SegmentProcessor) Run(ctx context.Context, cons consumer.Consumer) erro
 				<-heartbeatDone
 				p.stopAllWorkers(&workersMu, workers)
 				p.releaseAllSegments(context.Background(), cons.Name())
+				p.deregisterWorker(context.Background(), cons.Name())
 				return err
 			}
 		}
@@ -160,10 +170,14 @@ func (p *SegmentProcessor) runOneOff(ctx context.Context, cons consumer.Consumer
 		p.startSegmentWorker(ctx, cons, seg.SegmentID, aggregateTypeFilter, boundedContextFilter, workersMu, workers, workerErrCh)
 	}
 
+	workersMu.Lock()
+	claimed := len(workers)
+	workersMu.Unlock()
+
 	if p.config.Logger != nil {
 		p.config.Logger.Info(ctx, "one-off mode: all segments claimed",
 			"consumer", cons.Name(),
-			"segments_claimed", len(workers))
+			"segments_claimed", claimed)
 	}
 
 	// Wait for all workers to complete
@@ -206,7 +220,7 @@ func (p *SegmentProcessor) runOneOff(ctx context.Context, cons consumer.Consumer
 	return nil
 }
 
-// heartbeatLoop periodically sends heartbeat updates for all owned segments.
+// heartbeatLoop periodically refreshes the worker registry entry.
 func (p *SegmentProcessor) heartbeatLoop(ctx context.Context, consumerName string) {
 	ticker := time.NewTicker(p.config.HeartbeatInterval)
 	defer ticker.Stop()
@@ -216,9 +230,9 @@ func (p *SegmentProcessor) heartbeatLoop(ctx context.Context, consumerName strin
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := p.store.Heartbeat(ctx, p.db, consumerName, p.ownerID); err != nil {
+			if err := p.store.RegisterWorker(ctx, p.db, consumerName, p.ownerID); err != nil {
 				if p.config.Logger != nil {
-					p.config.Logger.Error(ctx, "heartbeat failed",
+					p.config.Logger.Error(ctx, "worker registry heartbeat failed",
 						"consumer", consumerName,
 						"owner_id", p.ownerID,
 						"error", err)
@@ -228,8 +242,13 @@ func (p *SegmentProcessor) heartbeatLoop(ctx context.Context, consumerName strin
 	}
 }
 
-// rebalance performs fair-share rebalancing: reclaim stale segments, release excess, claim available.
+// rebalance performs fair-share rebalancing: purge stale workers, reclaim stale segments, release excess, claim available.
 func (p *SegmentProcessor) rebalance(ctx context.Context, cons consumer.Consumer, aggregateTypeFilter, boundedContextFilter map[string]bool, workersMu *sync.Mutex, workers map[int]*segmentWorker, workerErrCh chan error) error {
+	// Purge stale worker registry entries
+	if err := p.store.PurgeStaleWorkers(ctx, p.db, cons.Name(), p.config.StaleThreshold); err != nil {
+		return fmt.Errorf("failed to purge stale workers: %w", err)
+	}
+
 	// Reclaim stale segments
 	if err := p.reclaimStale(ctx, cons.Name()); err != nil {
 		return err
@@ -274,18 +293,17 @@ func (p *SegmentProcessor) calculateFairShare(ctx context.Context, consumerName 
 	}
 
 	mySegments := make([]*store.Segment, 0)
-	activeOwners := make(map[string]bool)
 	for i := range segments {
 		seg := &segments[i]
-		if seg.OwnerID != nil {
-			activeOwners[*seg.OwnerID] = true
-			if *seg.OwnerID == p.ownerID {
-				mySegments = append(mySegments, seg)
-			}
+		if seg.OwnerID != nil && *seg.OwnerID == p.ownerID {
+			mySegments = append(mySegments, seg)
 		}
 	}
 
-	activeWorkers := len(activeOwners)
+	activeWorkers, err := p.store.CountActiveWorkers(ctx, p.db, consumerName, p.config.StaleThreshold)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to count active workers: %w", err)
+	}
 	if activeWorkers == 0 {
 		activeWorkers = 1
 	}
@@ -519,6 +537,18 @@ func (p *SegmentProcessor) releaseAllSegments(ctx context.Context, consumerName 
 		p.config.Logger.Info(ctx, "segments released",
 			"consumer", consumerName,
 			"count", released)
+	}
+}
+
+// deregisterWorker removes this worker from the registry during shutdown.
+func (p *SegmentProcessor) deregisterWorker(ctx context.Context, consumerName string) {
+	if err := p.store.DeregisterWorker(ctx, p.db, consumerName, p.ownerID); err != nil {
+		if p.config.Logger != nil {
+			p.config.Logger.Error(ctx, "failed to deregister worker",
+				"consumer", consumerName,
+				"owner_id", p.ownerID,
+				"error", err)
+		}
 	}
 }
 

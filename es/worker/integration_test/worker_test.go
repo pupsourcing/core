@@ -80,7 +80,7 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	// Drop existing objects to ensure clean state
-	tables := []string{"consumer_segments", "consumer_checkpoints", "aggregate_heads", "events"}
+	tables := []string{"consumer_workers", "consumer_segments", "consumer_checkpoints", "aggregate_heads", "events"}
 	for _, table := range tables {
 		_, err := db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE", table))
 		if err != nil {
@@ -97,6 +97,7 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
 		SegmentsTable:       "consumer_segments",
+		WorkerRegistryTable: "consumer_workers",
 	}
 
 	if err := migrations.GeneratePostgres(&config); err != nil {

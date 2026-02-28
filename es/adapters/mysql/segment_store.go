@@ -22,8 +22,8 @@ func (s *Store) InitializeSegments(ctx context.Context, tx es.DBTX, consumerName
 	}
 
 	query := fmt.Sprintf(`
-		INSERT IGNORE INTO %s (consumer_name, segment_id, total_segments, owner_id, checkpoint, last_heartbeat)
-		VALUES (?, ?, ?, NULL, 0, NULL)
+		INSERT IGNORE INTO %s (consumer_name, segment_id, total_segments, owner_id, checkpoint)
+		VALUES (?, ?, ?, NULL, 0)
 	`, s.config.SegmentsTable)
 
 	for segmentID := 0; segmentID < totalSegments; segmentID++ {
@@ -82,7 +82,7 @@ func (s *Store) ClaimSegment(ctx context.Context, tx es.DBTX, consumerName, owne
 	// Step 2: UPDATE the found segment
 	updateQuery := fmt.Sprintf(`
 		UPDATE %s 
-		SET owner_id = ?, last_heartbeat = NOW(6)
+		SET owner_id = ?
 		WHERE consumer_name = ? AND segment_id = ?
 	`, s.config.SegmentsTable)
 
@@ -93,8 +93,6 @@ func (s *Store) ClaimSegment(ctx context.Context, tx es.DBTX, consumerName, owne
 
 	// Set owner_id in the returned segment
 	segment.OwnerID = &ownerID
-	now := time.Now()
-	segment.LastHeartbeat = &now
 
 	if s.config.Logger != nil {
 		s.config.Logger.Info(ctx, "segment claimed",
@@ -117,7 +115,7 @@ func (s *Store) ReleaseSegment(ctx context.Context, tx es.DBTX, consumerName str
 
 	query := fmt.Sprintf(`
 		UPDATE %s 
-		SET owner_id = NULL, last_heartbeat = NULL
+		SET owner_id = NULL
 		WHERE consumer_name = ? AND segment_id = ? AND owner_id = ?
 	`, s.config.SegmentsTable)
 
@@ -148,41 +146,8 @@ func (s *Store) ReleaseSegment(ctx context.Context, tx es.DBTX, consumerName str
 	return nil
 }
 
-// Heartbeat implements store.SegmentStore.
-func (s *Store) Heartbeat(ctx context.Context, tx es.DBTX, consumerName, ownerID string) error {
-	if s.config.Logger != nil {
-		s.config.Logger.Debug(ctx, "sending heartbeat",
-			"consumer_name", consumerName,
-			"owner_id", ownerID)
-	}
-
-	query := fmt.Sprintf(`
-		UPDATE %s 
-		SET last_heartbeat = NOW(6)
-		WHERE consumer_name = ? AND owner_id = ?
-	`, s.config.SegmentsTable)
-
-	result, err := tx.ExecContext(ctx, query, consumerName, ownerID)
-	if err != nil {
-		return fmt.Errorf("failed to update heartbeat: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if s.config.Logger != nil {
-		s.config.Logger.Debug(ctx, "heartbeat sent",
-			"consumer_name", consumerName,
-			"owner_id", ownerID,
-			"segments_updated", rowsAffected)
-	}
-
-	return nil
-}
-
 // ReclaimStaleSegments implements store.SegmentStore.
+// Releases segments owned by workers not present in the active worker registry.
 func (s *Store) ReclaimStaleSegments(ctx context.Context, tx es.DBTX, consumerName string, staleThreshold time.Duration) (int, error) {
 	if s.config.Logger != nil {
 		s.config.Logger.Debug(ctx, "reclaiming stale segments",
@@ -192,12 +157,16 @@ func (s *Store) ReclaimStaleSegments(ctx context.Context, tx es.DBTX, consumerNa
 
 	query := fmt.Sprintf(`
 		UPDATE %s 
-		SET owner_id = NULL, last_heartbeat = NULL
+		SET owner_id = NULL
 		WHERE consumer_name = ? AND owner_id IS NOT NULL
-		  AND last_heartbeat < NOW(6) - INTERVAL ? SECOND
-	`, s.config.SegmentsTable)
+		  AND owner_id NOT IN (
+		    SELECT worker_id FROM %s
+		    WHERE consumer_name = ?
+		      AND last_heartbeat >= NOW(6) - INTERVAL ? SECOND
+		  )
+	`, s.config.SegmentsTable, s.config.WorkerRegistryTable)
 
-	result, err := tx.ExecContext(ctx, query, consumerName, staleThreshold.Seconds())
+	result, err := tx.ExecContext(ctx, query, consumerName, consumerName, staleThreshold.Seconds())
 	if err != nil {
 		return 0, fmt.Errorf("failed to reclaim stale segments: %w", err)
 	}
@@ -231,7 +200,7 @@ func (s *Store) GetSegments(ctx context.Context, tx es.DBTX, consumerName string
 	}
 
 	query := fmt.Sprintf(`
-		SELECT consumer_name, segment_id, total_segments, owner_id, checkpoint, last_heartbeat
+		SELECT consumer_name, segment_id, total_segments, owner_id, checkpoint
 		FROM %s
 		WHERE consumer_name = ?
 		ORDER BY segment_id ASC
@@ -247,7 +216,6 @@ func (s *Store) GetSegments(ctx context.Context, tx es.DBTX, consumerName string
 	for rows.Next() {
 		var seg store.Segment
 		var ownerID sql.NullString
-		var lastHeartbeat sql.NullTime
 
 		err := rows.Scan(
 			&seg.ConsumerName,
@@ -255,7 +223,6 @@ func (s *Store) GetSegments(ctx context.Context, tx es.DBTX, consumerName string
 			&seg.TotalSegments,
 			&ownerID,
 			&seg.Checkpoint,
-			&lastHeartbeat,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan segment: %w", err)
@@ -264,9 +231,6 @@ func (s *Store) GetSegments(ctx context.Context, tx es.DBTX, consumerName string
 		// Convert nullable fields
 		if ownerID.Valid {
 			seg.OwnerID = &ownerID.String
-		}
-		if lastHeartbeat.Valid {
-			seg.LastHeartbeat = &lastHeartbeat.Time
 		}
 
 		segments = append(segments, seg)
@@ -315,6 +279,96 @@ func (s *Store) UpdateSegmentCheckpoint(ctx context.Context, tx es.DBTX, consume
 	_, err := tx.ExecContext(ctx, query, position, consumerName, segmentID)
 	if err != nil {
 		return fmt.Errorf("failed to update segment checkpoint: %w", err)
+	}
+
+	return nil
+}
+
+// --- Worker Registry ---
+
+// RegisterWorker implements store.SegmentStore.
+func (s *Store) RegisterWorker(ctx context.Context, tx es.DBTX, consumerName, workerID string) error {
+	query := fmt.Sprintf(`
+		INSERT INTO %s (consumer_name, worker_id, last_heartbeat)
+		VALUES (?, ?, NOW(6))
+		ON DUPLICATE KEY UPDATE last_heartbeat = NOW(6)
+	`, s.config.WorkerRegistryTable)
+
+	_, err := tx.ExecContext(ctx, query, consumerName, workerID)
+	if err != nil {
+		return fmt.Errorf("failed to register worker: %w", err)
+	}
+
+	if s.config.Logger != nil {
+		s.config.Logger.Debug(ctx, "worker registered",
+			"consumer_name", consumerName,
+			"worker_id", workerID)
+	}
+
+	return nil
+}
+
+// DeregisterWorker implements store.SegmentStore.
+func (s *Store) DeregisterWorker(ctx context.Context, tx es.DBTX, consumerName, workerID string) error {
+	query := fmt.Sprintf(`
+		DELETE FROM %s
+		WHERE consumer_name = ? AND worker_id = ?
+	`, s.config.WorkerRegistryTable)
+
+	_, err := tx.ExecContext(ctx, query, consumerName, workerID)
+	if err != nil {
+		return fmt.Errorf("failed to deregister worker: %w", err)
+	}
+
+	if s.config.Logger != nil {
+		s.config.Logger.Debug(ctx, "worker deregistered",
+			"consumer_name", consumerName,
+			"worker_id", workerID)
+	}
+
+	return nil
+}
+
+// CountActiveWorkers implements store.SegmentStore.
+func (s *Store) CountActiveWorkers(
+	ctx context.Context, tx es.DBTX, consumerName string, staleThreshold time.Duration,
+) (int, error) {
+	query := fmt.Sprintf(`
+		SELECT COUNT(*) FROM %s
+		WHERE consumer_name = ?
+		  AND last_heartbeat >= NOW(6) - INTERVAL ? SECOND
+	`, s.config.WorkerRegistryTable)
+
+	var count int
+	err := tx.QueryRowContext(ctx, query, consumerName, staleThreshold.Seconds()).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count active workers: %w", err)
+	}
+
+	return count, nil
+}
+
+// PurgeStaleWorkers implements store.SegmentStore.
+func (s *Store) PurgeStaleWorkers(
+	ctx context.Context, tx es.DBTX, consumerName string, staleThreshold time.Duration,
+) error {
+	query := fmt.Sprintf(`
+		DELETE FROM %s
+		WHERE consumer_name = ?
+		  AND last_heartbeat < NOW(6) - INTERVAL ? SECOND
+	`, s.config.WorkerRegistryTable)
+
+	result, err := tx.ExecContext(ctx, query, consumerName, staleThreshold.Seconds())
+	if err != nil {
+		return fmt.Errorf("failed to purge stale workers: %w", err)
+	}
+
+	if s.config.Logger != nil {
+		if rowsAffected, err := result.RowsAffected(); err == nil && rowsAffected > 0 {
+			s.config.Logger.Info(ctx, "stale workers purged",
+				"consumer_name", consumerName,
+				"count", rowsAffected)
+		}
 	}
 
 	return nil
