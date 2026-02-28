@@ -12,16 +12,15 @@ A production-ready Event Sourcing library for Go.
 
 ## Overview
 
-pupsourcing provides minimal, reliable infrastructure for event sourcing in Go applications. State changes are stored as an immutable sequence of events, providing a complete audit trail and enabling event replay, temporal queries, and flexible read models.
+pupsourcing provides minimal, reliable infrastructure for event sourcing in Go applications. State changes are stored as an immutable sequence of events, providing complete audit trails and enabling event replay, temporal queries, and flexible read models.
 
 ## Key Features
 
-- **Clean Architecture** - no "infrastructure creep" into your domain model (no annotations, no framework-specific base structs)
-- **Multiple Database Adapters** - PostgreSQL, SQLite, and MySQL/MariaDB
-- **Bounded Context Support** - Events are scoped to bounded contexts for domain-driven design alignment
+- **Clean Architecture** - No "infrastructure creep" into your domain model (no annotations, no framework-specific base structs)
+- **Multiple Database Adapters** - PostgreSQL, MySQL, and SQLite
+- **Bounded Context Support** - Events scoped to bounded contexts for domain-driven design alignment
 - **Optimistic Concurrency** - Automatic conflict detection via database constraints
-- **Consumer System** - Pull-based event processing with checkpoints, supporting both global and context-scoped consumers
-- **Horizontal Scaling** - Hash-based partitioning for consumer workers
+- **Auto-Scaling Workers** - Segment-based consumer processing. Deploy N instances, they self-organize
 - **Code Generation** - Optional tool for strongly-typed domain event mapping
 - **Minimal Dependencies** - Go standard library plus database driver
 
@@ -130,87 +129,66 @@ for _, event := range stream.Events {
 
 ### 5. Run Consumers
 
-Consumers process events from the event store. Use **scoped consumers** for read models that only care about specific aggregate types and/or bounded contexts, or **global consumers** for integration publishers that need all events.
+Use the **Worker API** for production consumer workloads. The Worker manages segment-based processing with automatic scaling and an internal dispatcher for wakeup optimization.
 
 ```go
-import "github.com/pupsourcing/core/es/consumer"
+import (
+    "github.com/pupsourcing/core/es"
+    "github.com/pupsourcing/core/es/adapters/postgres"
+)
 
-// Scoped projection - only receives User aggregate events from Identity context
-type UserReadModelProjection struct{}
+// Define a projection - scoped to specific aggregate types and bounded contexts
+type UserProjection struct{}
 
-func (p *UserReadModelProjection) Name() string {
-    return "user_read_model"
-}
+func (p *UserProjection) Name() string { return "user_projection" }
 
-// AggregateTypes filters events by aggregate type
-func (p *UserReadModelProjection) AggregateTypes() []string {
+func (p *UserProjection) AggregateTypes() []string {
     return []string{"User"}  // Only receives User events
 }
 
-// BoundedContexts filters events by bounded context
-func (p *UserReadModelProjection) BoundedContexts() []string {
-    return []string{"Identity"}  // Only receives events from Identity context
+func (p *UserProjection) BoundedContexts() []string {
+    return []string{"Identity"}  // Only receives Identity context events
 }
 
-func (p *UserReadModelProjection) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
-    // Update read model using the provided transaction for atomic consistency
-    // The transaction is committed by the processor after successful handling
-    // IMPORTANT: Do NOT commit or rollback the transaction - the processor manages that
+func (p *UserProjection) Handle(ctx context.Context, tx *sql.Tx, event es.PersistedEvent) error {
+    // Update your read model here
+    // IMPORTANT: Do NOT commit or rollback the transaction - the worker manages that
     return nil
 }
 
-// Run projection with adapter-specific processor
+// Run with auto-scaling
 store := postgres.NewStore(postgres.DefaultStoreConfig())
-config := consumer.DefaultProcessorConfig()
-processor := postgres.NewProcessor(db, store, &config)
-err := processor.Run(ctx, &UserReadModelProjection{})
+w := postgres.NewWorker(db, store)
+err := w.Run(ctx, &UserProjection{})
 ```
 
-Optional optimization for many consumers in one process (best-effort wake signals with explicit lifecycle):
+The Worker manages segment-based processing with an internal dispatcher for wakeup optimization. Deploy the same binary multiple times — workers automatically claim and rebalance segments.
+
+**Customizing the Worker:**
 
 ```go
-runCtx, cancel := context.WithCancel(ctx)
-defer cancel()
+import "github.com/pupsourcing/core/es/worker"
 
-dispatcher := consumer.NewDispatcher(db, store, nil) // uses DefaultDispatcherConfig
-dispatcherErrCh := make(chan error, 1)
-go func() {
-    dispatcherErrCh <- dispatcher.Run(runCtx)
-}()
+w := postgres.NewWorker(db, store,
+    worker.WithTotalSegments(32),        // More segments = more parallelism
+    worker.WithLogger(myLogger),         // Optional observability
+    worker.WithBatchSize(200),           // Events per batch
+    worker.WithPollInterval(50*time.Millisecond),
+)
 
-consumersSlice := []consumer.Consumer{
-    &UserReadModelProjection{},
-    &AnotherConsumer{},
-}
-
-runners := make([]runner.ConsumerRunner, len(consumersSlice))
-for i, c := range consumersSlice {
-    cfg := consumer.DefaultProcessorConfig()
-    cfg.WakeupSource = dispatcher // correctness still relies on checkpoints + fallback polling
-    cfg.PollInterval = 500 * time.Millisecond
-    cfg.MaxPollInterval = 8 * time.Second
-
-    runners[i] = runner.ConsumerRunner{
-        Consumer: c,
-        Processor:  postgres.NewProcessor(db, store, &cfg),
-    }
-}
-
-runErr := runner.New().Run(runCtx, runners)
-cancel() // ensure dispatcher stops even if runner exits first
-dispatcherErr := <-dispatcherErrCh
-
-if runErr != nil && !errors.Is(runErr, context.Canceled) {
-    return runErr
-}
-if dispatcherErr != nil &&
-    !errors.Is(dispatcherErr, context.Canceled) &&
-    !errors.Is(dispatcherErr, context.DeadlineExceeded) {
-    // Optional: log warning; consumers remain correct via fallback polling.
-}
+// Run multiple consumers in the same worker
+err := w.Run(ctx, &UserProjection{}, &OrderProjection{}, &NotificationConsumer{})
 ```
 
-See the full runnable version in [`examples/dispatcher-runner`](./examples/dispatcher-runner/).
+## Scaling
+
+Workers auto-scale via segment claiming. Each worker claims a fair share of segments and rebalances when workers join or leave. No coordinator needed — workers self-organize using database-level atomic operations.
+
+**To scale horizontally:** Deploy more instances of the same binary. Each worker automatically claims segments and processes its fair share of the event stream.
+
+**To scale down:** Stop instances — remaining workers reclaim orphaned segments after the stale threshold (default: 30 seconds).
+
+The number of segments (default: 16 per consumer) determines the upper bound on parallelism. With 16 segments and 4 workers, each worker processes ~4 segments. With 8 workers, each processes ~2 segments.
 
 ## Documentation
 
@@ -228,12 +206,16 @@ Comprehensive documentation is available at **[https://pupsourcing.gopup.dev](ht
 
 Complete runnable examples are available in the [`examples/`](./examples) directory:
 
-- **[Single Worker](./examples/single-worker/)** - Basic consumer pattern
-- **[Multiple Consumers](./examples/multiple-projections/)** - Running different consumers concurrently
-- **[Dispatcher + Runner](./examples/dispatcher-runner/)** - Safe dispatcher lifecycle with wakeup optimization
-- **[Worker Pool](./examples/worker-pool/)** - Multiple workers in the same process
-- **[Partitioned](./examples/partitioned/)** - Horizontal scaling across processes
-- **[With Logging](./examples/with-logging/)** - Observability and debugging
+- **[basic](./examples/basic/)** - Basic event appending and reading
+- **[worker](./examples/worker/)** - Recommended consumer pattern with auto-scaling (coming soon)
+- **[scoped-projections](./examples/scoped-projections/)** - Filtering events by bounded context and aggregate type
+- **[cockroachdb-basic](./examples/cockroachdb-basic/)** - CockroachDB compatibility
+- **[mysql-basic](./examples/mysql-basic/)** - MySQL adapter
+- **[sqlite-basic](./examples/sqlite-basic/)** - SQLite adapter
+- **[integration-testing](./examples/integration-testing/)** - Testing patterns
+- **[with-logging](./examples/with-logging/)** - Observability
+- **[stop-resume](./examples/stop-resume/)** - Checkpoint persistence
+- **[eventmap-codegen](./examples/eventmap-codegen/)** - Code generation
 
 See the [examples README](./examples/README.md) for more details.
 

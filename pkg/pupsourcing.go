@@ -6,6 +6,7 @@
 //	es           - Core types and interfaces
 //	es/store     - Event store abstractions
 //	es/consumer  - Consumer processing
+//	es/worker    - High-level Worker API (recommended for running consumers)
 //	es/adapters/postgres - PostgreSQL implementation
 //	es/migrations - Migration generation
 //
@@ -20,7 +21,11 @@
 //     positions, err := store.Append(ctx, tx, events)
 //     tx.Commit()
 //
-//  3. Process events:
+//  3. Process events with Worker (recommended):
+//     w := postgres.NewWorker(db, store)
+//     w.Run(ctx, &MyProjection{}, &OtherProjection{})
+//
+//     Or use the lower-level Processor API for custom workflows:
 //     processor := consumer.NewProcessor(db, store, consumer.DefaultProcessorConfig())
 //     processor.Run(ctx, myConsumer)
 //

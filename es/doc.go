@@ -64,7 +64,7 @@
 //
 // 5. Process events with consumers:
 //
-//	import "github.com/pupsourcing/core/es/consumer"
+//	import "github.com/pupsourcing/core/es/adapters/postgres"
 //
 //	type MyProjection struct {}
 //
@@ -75,9 +75,8 @@
 //	    return nil
 //	}
 //
-//	config := consumer.DefaultProcessorConfig()
-//	processor := consumer.NewProcessor(db, store, &config)
-//	processor.Run(ctx, &MyProjection{})
+//	w := postgres.NewWorker(db, store)
+//	w.Run(ctx, &MyProjection{})
 //
 // # Optimistic Concurrency
 //
@@ -94,10 +93,21 @@
 // Consumers process events sequentially and track their progress via checkpoints.
 // They can be:
 //   - Long-running (endless processing with context cancellation)
-//   - Horizontally scaled (via deterministic hash partitioning)
+//   - Horizontally scaled (via segment-based auto-scaling or hash-based partitioning)
 //   - Resumed after failure (from last checkpoint)
 //
-// See the consumer package for details.
+// # Architecture
+//
+// The library provides multiple layers for event consumption:
+//
+//   - worker: High-level Worker API (recommended) - wraps segment-based processor,
+//     dispatcher, and runner into a single entry point with automatic scaling
+//   - consumer: Low-level processor API for custom workflows
+//   - runner: Concurrent execution of multiple consumers
+//   - dispatcher: Wake-based coordination to reduce idle polling
+//
+// For most use cases, start with the worker package. Use lower-level packages
+// for custom scaling strategies or advanced integration patterns.
 //
 // # Database Schema
 //
@@ -123,6 +133,8 @@
 // Pull-based consumers: Consumers read events in batches. This is simpler
 // than push-based and works well with checkpoint-based resumption.
 //
-// Hash-based partitioning: Events for the same aggregate go to the same
-// partition. This maintains ordering while enabling horizontal scaling.
+// Segment-based scaling: The recommended approach for horizontal scaling uses
+// dynamic segments that can be claimed and released at runtime. This enables
+// auto-scaling without restarts. For simpler fixed-partition scenarios,
+// hash-based partitioning is also available.
 package es

@@ -4,7 +4,27 @@ Comprehensive, runnable examples demonstrating pupsourcing patterns and use case
 
 ## Overview
 
-Each example is self-contained and demonstrates specific patterns. Start with database-specific examples for fundamentals, then explore projection and scaling patterns.
+Each example is self-contained and demonstrates specific patterns. Start with the `worker` example to understand the recommended approach for running consumers, then explore database-specific and projection patterns.
+
+## Consumer Examples
+
+### [Worker](./worker/)
+**Difficulty:** Beginner  
+**Best for:** Getting started, recommended approach for running consumers
+
+Demonstrates the high-level Worker API that wraps segment-based processor, dispatcher, and runner into a single entry point. This is the recommended way to run projections with automatic scaling support.
+
+**What you'll learn:**
+- Using the Worker API (recommended approach)
+- Running multiple projections concurrently
+- Automatic segment-based scaling
+- Graceful shutdown
+
+**Run it:**
+```bash
+cd worker
+go run main.go
+```
 
 ## Database Examples
 
@@ -63,113 +83,26 @@ cd mysql-basic
 go run main.go
 ```
 
+### [CockroachDB Basic](./cockroachdb-basic/)
+**Database:** CockroachDB  
+**Difficulty:** Beginner  
+**Best for:** CockroachDB infrastructure, globally distributed systems
+Demonstrates event sourcing with CockroachDB (distributed SQL).
+
+**Prerequisites:**
+```bash
+docker run -d -p 26257:26257 -p 8080:8080 cockroachdb/cockroach:latest start-single-node --insecure
+```
+
+**Run it:**
+```bash
+cd cockroachdb-basic
+go run main.go
+```
+
 ## Projection Examples
 
-### 1. [Single Worker](./single-worker/)
-**Difficulty:** Beginner  
-**Best for:** Getting started, development, low-volume production
-
-The simplest projection pattern - one projection, one worker, no partitioning.
-
-**What you'll learn:**
-- Basic projection setup
-- Checkpoint tracking
-- Graceful shutdown
-- Event processing
-
-**Run it:**
-```bash
-cd single-worker
-go run main.go
-```
-
-### 2. [Partitioned](./partitioned/)
-**Difficulty:** Intermediate  
-**Best for:** High-volume production, horizontal scaling
-
-Run the same projection across multiple processes with partitioning.
-
-**What you'll learn:**
-- Horizontal scaling across processes
-- Hash-based partitioning
-- Independent worker operation
-- CLI-friendly configuration
-
-**Run it:**
-```bash
-# Terminal 1
-cd partitioned
-PARTITION_KEY=0 go run main.go
-
-# Terminal 2
-PARTITION_KEY=1 go run main.go
-
-# Terminal 3-4: same with PARTITION_KEY=2 and 3
-```
-
-### 3. [Worker Pool](./worker-pool/)
-**Difficulty:** Intermediate  
-**Best for:** Medium-scale production, single machine
-
-Run multiple partitions of a projection in the same process using goroutines.
-
-**What you'll learn:**
-- In-process parallelism
-- Thread-safe projections
-- Runner package usage
-- Resource sharing
-
-**Run it:**
-```bash
-cd worker-pool
-go run main.go --workers=4
-```
-
-### 4. [Multiple Projections](./multiple-projections/)
-**Difficulty:** Intermediate  
-**Best for:** CQRS applications, multiple read models
-
-Run different projections concurrently in the same process.
-
-**What you'll learn:**
-- Running multiple projections
-- Independent checkpoints
-- Different batch sizes per projection
-- Runner configuration
-
-**Run it:**
-```bash
-cd multiple-projections
-go run main.go
-```
-
-### 5. [Scaling](./scaling/)
-**Difficulty:** Advanced  
-**Best for:** Understanding scaling mechanics
-
-Demonstrates how to safely scale from 1 worker to N workers dynamically.
-
-**What you'll learn:**
-- Adding workers incrementally
-- Independent catch-up
-- Load distribution
-- Production scaling patterns
-
-**Run it:**
-```bash
-cd scaling
-
-# Append events once
-go run main.go --worker-id=0 --append
-
-# Start workers incrementally
-WORKER_ID=0 go run main.go  # Terminal 1
-WORKER_ID=1 go run main.go  # Terminal 2
-WORKER_ID=2 go run main.go  # Terminal 3
-WORKER_ID=3 go run main.go  # Terminal 4
-```
-
-### 6. [Stop and Resume](./stop-resume/)
+### [Stop and Resume](./stop-resume/)
 **Difficulty:** Beginner  
 **Best for:** Understanding checkpoint reliability
 
@@ -198,7 +131,7 @@ go run main.go --mode=status
 go run main.go --mode=process
 ```
 
-### 7. [Scoped Projections](./scoped-projections/)
+### [Scoped Projections](./scoped-projections/)
 **Difficulty:** Intermediate  
 **Best for:** Understanding scoped vs global projections
 
@@ -216,25 +149,7 @@ cd scoped-projections
 go run main.go
 ```
 
-### 8. [Dispatcher + Runner](./dispatcher-runner/)
-**Difficulty:** Intermediate  
-**Best for:** Reducing idle projection polling in multi-projection processes
-
-Demonstrates how to wire a process-local dispatcher with runner-managed projections and shut down cleanly using a timeout-bound context.
-
-**What you'll learn:**
-- Wiring `consumer.NewDispatcher` with projection processors
-- Passing dispatcher wake signals into runner-managed projection processors
-- Running dispatcher and runner with explicit lifecycle coordination
-- Bounded execution using `context.WithTimeout` (no hanging goroutines)
-
-**Run it:**
-```bash
-cd dispatcher-runner
-go run main.go
-```
-
-### 9. [Custom Logging](./with-logging/)
+### [Custom Logging](./with-logging/)
 **Difficulty:** Beginner  
 **Best for:** Production observability integration
 
@@ -253,6 +168,24 @@ go run main.go
 ```
 
 ## Advanced Examples
+
+### [Integration Testing](./integration-testing/)
+**Difficulty:** Intermediate  
+**Best for:** Testing event sourcing applications
+
+Demonstrates patterns for integration testing event sourcing applications.
+
+**What you'll learn:**
+- Setting up test databases
+- Testing event appending
+- Testing projections
+- Test isolation patterns
+
+**Run it:**
+```bash
+cd integration-testing
+go test -v
+```
 
 ### [Event Mapping Code Generation](./eventmap-codegen/)
 **Difficulty:** Advanced  
@@ -306,17 +239,16 @@ docker run -d -p 5432:5432 \
 ## Learning Path
 
 **New to event sourcing?**
-1. Start with [Single Worker](./single-worker/)
+1. Start with [Worker](./worker/) to see the recommended approach
 2. Read [Core Concepts](https://pupsourcing.gopup.dev/core-concepts)
-3. Try [Stop and Resume](./stop-resume/)
+3. Try [Stop and Resume](./stop-resume/) to understand checkpoints
 
 **Need to scale projections?**
-1. Review [Worker Pool](./worker-pool/) for single-machine scaling
-2. Study [Partitioned](./partitioned/) for multi-machine scaling
-3. Understand [Scaling](./scaling/) for dynamic scaling
+1. The [Worker](./worker/) example uses segment-based scaling (recommended)
+2. For custom scaling strategies, explore the consumer package directly
 
 **Building a CQRS application?**
-1. Explore [Multiple Projections](./multiple-projections/)
+1. Start with [Worker](./worker/) for running multiple projections
 2. Read [Scaling Guide](https://pupsourcing.gopup.dev/scaling)
 
 ## Key Concepts
@@ -343,7 +275,9 @@ For non-SQL integrations (e.g., message brokers), you can ignore the transaction
 
 ### Horizontal Scaling
 
-Multiple projection processors can run in parallel using hash-based partitioning. Events for the same aggregate always go to the same partition, maintaining ordering.
+The Worker API provides segment-based auto-scaling that allows multiple worker processes to
+claim and process segments dynamically. Events for the same aggregate always go to the same
+segment, maintaining ordering. For custom scaling strategies, use the consumer package directly.
 
 ### Checkpoints
 
