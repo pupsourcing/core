@@ -57,11 +57,11 @@ func TestProjection_OneOffMode(t *testing.T) {
 
 	// Act: Process with one-off mode
 	proj := &UserProjection{}
-	config := consumer.DefaultProcessorConfig()
+	config := consumer.DefaultBasicProcessorConfig()
 	config.RunMode = consumer.RunModeOneOff
 	config.BatchSize = 5 // Process in multiple batches
 
-	processor := sqlite.NewProcessor(db, store, &config)
+	processor := sqlite.NewBasicProcessor(db, store, config)
 
 	// This will process all events and exit cleanly
 	err := processor.Run(ctx, proj)
@@ -109,10 +109,10 @@ func TestProjection_OneOffMode_EmptyStore(t *testing.T) {
 
 	// Process with one-off mode
 	proj := &UserProjection{}
-	config := consumer.DefaultProcessorConfig()
+	config := consumer.DefaultBasicProcessorConfig()
 	config.RunMode = consumer.RunModeOneOff
 
-	processor := sqlite.NewProcessor(db, store, &config)
+	processor := sqlite.NewBasicProcessor(db, store, config)
 
 	// Should exit immediately with no error
 	err := processor.Run(ctx, proj)
@@ -168,10 +168,10 @@ func TestProjection_ContinuousMode_StillWorks(t *testing.T) {
 
 	// Process with continuous mode (default)
 	proj := &UserProjection{}
-	config := consumer.DefaultProcessorConfig()
+	config := consumer.DefaultBasicProcessorConfig()
 	// RunMode defaults to RunModeContinuous
 
-	processor := sqlite.NewProcessor(db, store, &config)
+	processor := sqlite.NewBasicProcessor(db, store, config)
 
 	// Run with timeout - should continue until context cancellation
 	ctx2, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
@@ -218,6 +218,8 @@ func setupTestDB(t *testing.T) *sql.DB {
 		EventsTable:         "events",
 		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
+		SegmentsTable:       "consumer_segments",
+		WorkerRegistryTable: "consumer_workers",
 	}
 
 	if genErr := migrations.GenerateSQLite(&config); genErr != nil {

@@ -77,6 +77,8 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 
 	// Drop existing objects to ensure clean state
 	_, err := db.Exec(`
+		DROP TABLE IF EXISTS consumer_workers CASCADE;
+		DROP TABLE IF EXISTS consumer_segments CASCADE;
 		DROP TABLE IF EXISTS consumer_checkpoints CASCADE;
 		DROP TABLE IF EXISTS aggregate_heads CASCADE;
 		DROP TABLE IF EXISTS events CASCADE;
@@ -92,6 +94,8 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 		EventsTable:         "events",
 		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
+		SegmentsTable:       "consumer_segments",
+		WorkerRegistryTable: "consumer_workers",
 	}
 
 	if err := migrations.GeneratePostgres(&config); err != nil {
@@ -194,8 +198,9 @@ func TestConsumer_BasicProcessing(t *testing.T) {
 
 	// Run consumer
 	proj := newTestConsumer("test_consumer")
-	config := consumer.DefaultProcessorConfig()
-	processor := postgres.NewProcessor(db, store, &config)
+	config := consumer.DefaultSegmentProcessorConfig()
+	config.TotalSegments = 1
+	processor := postgres.NewSegmentProcessor(db, store, config)
 
 	// Run for a short time - increased timeout for CI environment
 	ctx2, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -253,9 +258,10 @@ func TestConsumer_Checkpoint(t *testing.T) {
 
 	// First run processes some events
 	proj1 := newTestConsumer("checkpoint_test")
-	config := consumer.DefaultProcessorConfig()
+	config := consumer.DefaultSegmentProcessorConfig()
+	config.TotalSegments = 1
 	config.BatchSize = 2
-	processor1 := postgres.NewProcessor(db, store, &config)
+	processor1 := postgres.NewSegmentProcessor(db, store, config)
 
 	ctx1, cancel1 := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel1()
@@ -269,7 +275,7 @@ func TestConsumer_Checkpoint(t *testing.T) {
 
 	// Second run should resume from checkpoint
 	proj2 := newTestConsumer("checkpoint_test")
-	processor2 := postgres.NewProcessor(db, store, &config)
+	processor2 := postgres.NewSegmentProcessor(db, store, config)
 
 	ctx2, cancel2 := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel2()
@@ -321,8 +327,9 @@ func TestConsumer_ErrorHandling(t *testing.T) {
 
 	// Create consumer that returns error
 	errorProj := &errorConsumer{name: "error_test"}
-	config := consumer.DefaultProcessorConfig()
-	processor := postgres.NewProcessor(db, store, &config)
+	config := consumer.DefaultSegmentProcessorConfig()
+	config.TotalSegments = 1
+	processor := postgres.NewSegmentProcessor(db, store, config)
 
 	ctx2, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
@@ -388,11 +395,12 @@ func TestProcessor_RunModeOneOff(t *testing.T) {
 	proj := newTestConsumer("test_oneoff")
 
 	// Configure processor in one-off mode
-	config := consumer.DefaultProcessorConfig()
+	config := consumer.DefaultSegmentProcessorConfig()
+	config.TotalSegments = 1
 	config.RunMode = consumer.RunModeOneOff
 	config.BatchSize = 10
 
-	processor := postgres.NewProcessor(db, store, &config)
+	processor := postgres.NewSegmentProcessor(db, store, config)
 
 	// Run should exit cleanly after processing all events
 	err = processor.Run(ctx, proj)
@@ -405,9 +413,9 @@ func TestProcessor_RunModeOneOff(t *testing.T) {
 		t.Errorf("Expected %d events processed, got %d", eventCount, proj.EventCount())
 	}
 
-	// Verify checkpoint was saved at the end
+	// Verify checkpoint was saved at the end (segment checkpoint, not consumer checkpoint)
 	tx2, _ := db.BeginTx(ctx, nil)
-	checkpoint, err := store.GetCheckpoint(ctx, tx2, proj.Name())
+	checkpoint, err := store.GetSegmentCheckpoint(ctx, tx2, proj.Name(), 0)
 	tx2.Commit()
 	if err != nil {
 		t.Fatalf("Failed to get checkpoint: %v", err)
@@ -432,10 +440,11 @@ func TestProcessor_RunModeOneOff_EmptyStore(t *testing.T) {
 	proj := newTestConsumer("test_oneoff_empty")
 
 	// Configure processor in one-off mode
-	config := consumer.DefaultProcessorConfig()
+	config := consumer.DefaultSegmentProcessorConfig()
+	config.TotalSegments = 1
 	config.RunMode = consumer.RunModeOneOff
 
-	processor := postgres.NewProcessor(db, store, &config)
+	processor := postgres.NewSegmentProcessor(db, store, config)
 
 	// Run should exit cleanly immediately with no events
 	err := processor.Run(ctx, proj)
@@ -487,11 +496,12 @@ func TestProcessor_RunModeOneOff_PartialBatch(t *testing.T) {
 	proj := newTestConsumer("test_oneoff_partial")
 
 	// Configure processor in one-off mode with batch size larger than events
-	config := consumer.DefaultProcessorConfig()
+	config := consumer.DefaultSegmentProcessorConfig()
+	config.TotalSegments = 1
 	config.RunMode = consumer.RunModeOneOff
 	config.BatchSize = 100
 
-	processor := postgres.NewProcessor(db, store, &config)
+	processor := postgres.NewSegmentProcessor(db, store, config)
 
 	// Run should exit cleanly after processing partial batch
 	err = processor.Run(ctx, proj)
@@ -541,10 +551,11 @@ func TestProcessor_RunModeContinuous_StillWorks(t *testing.T) {
 	proj := newTestConsumer("test_continuous")
 
 	// Configure processor in continuous mode (default)
-	config := consumer.DefaultProcessorConfig()
+	config := consumer.DefaultSegmentProcessorConfig()
+	config.TotalSegments = 1
 	// RunMode defaults to RunModeContinuous
 
-	processor := postgres.NewProcessor(db, store, &config)
+	processor := postgres.NewSegmentProcessor(db, store, config)
 
 	// Run with timeout - should continue until context cancellation
 	ctx2, cancel := context.WithTimeout(ctx, 500*time.Millisecond)

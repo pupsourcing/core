@@ -20,8 +20,8 @@ type DispatcherConfig struct {
 }
 
 // DefaultDispatcherConfig returns the default dispatcher configuration.
-func DefaultDispatcherConfig() DispatcherConfig {
-	return DispatcherConfig{
+func DefaultDispatcherConfig() *DispatcherConfig {
+	return &DispatcherConfig{
 		Logger:       nil,
 		PollInterval: 100 * time.Millisecond,
 	}
@@ -45,7 +45,7 @@ var _ WakeupSource = (*Dispatcher)(nil)
 
 // NewDispatcher creates a dispatcher that polls the given global position reader.
 func NewDispatcher(db es.DBTX, reader store.GlobalPositionReader, config *DispatcherConfig) *Dispatcher {
-	cfg := DefaultDispatcherConfig()
+	cfg := *DefaultDispatcherConfig()
 	if config != nil {
 		cfg = *config
 	}

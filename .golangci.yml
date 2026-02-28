@@ -43,6 +43,8 @@ linters:
       - linters:
           - dupl
           - gosec
+          - gocyclo
+          - govet
         path: _test\.go
     paths:
       - third_party$

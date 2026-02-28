@@ -26,14 +26,22 @@ type StoreConfig struct {
 
 	// AggregateHeadsTable is the name of the aggregate version tracking table
 	AggregateHeadsTable string
+
+	// SegmentsTable is the name of the consumer segments table
+	SegmentsTable string
+
+	// WorkerRegistryTable is the name of the worker registry table
+	WorkerRegistryTable string
 }
 
 // DefaultStoreConfig returns the default configuration.
-func DefaultStoreConfig() StoreConfig {
-	return StoreConfig{
+func DefaultStoreConfig() *StoreConfig {
+	return &StoreConfig{
 		EventsTable:         "events",
 		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
+		SegmentsTable:       "consumer_segments",
+		WorkerRegistryTable: "consumer_workers",
 		Logger:              nil, // No logging by default
 	}
 }
@@ -69,6 +77,20 @@ func WithAggregateHeadsTable(tableName string) StoreOption {
 	}
 }
 
+// WithSegmentsTable sets a custom consumer segments table name.
+func WithSegmentsTable(tableName string) StoreOption {
+	return func(c *StoreConfig) {
+		c.SegmentsTable = tableName
+	}
+}
+
+// WithWorkerRegistryTable sets a custom worker registry table name.
+func WithWorkerRegistryTable(tableName string) StoreOption {
+	return func(c *StoreConfig) {
+		c.WorkerRegistryTable = tableName
+	}
+}
+
 // NewStoreConfig creates a new store configuration with functional options.
 // It starts with the default configuration and applies the given options.
 //
@@ -78,10 +100,10 @@ func WithAggregateHeadsTable(tableName string) StoreOption {
 //	    postgres.WithLogger(myLogger),
 //	    postgres.WithEventsTable("custom_events"),
 //	)
-func NewStoreConfig(opts ...StoreOption) StoreConfig {
+func NewStoreConfig(opts ...StoreOption) *StoreConfig {
 	config := DefaultStoreConfig()
 	for _, opt := range opts {
-		opt(&config)
+		opt(config)
 	}
 	return config
 }
@@ -92,9 +114,9 @@ type Store struct {
 }
 
 // NewStore creates a new Postgres event store with the given configuration.
-func NewStore(config StoreConfig) *Store {
+func NewStore(config *StoreConfig) *Store {
 	return &Store{
-		config: config,
+		config: *config,
 	}
 }
 

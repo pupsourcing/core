@@ -163,8 +163,10 @@ func handleAppendMode(ctx context.Context, db *sql.DB, store *postgres.Store, nu
 
 func handleProcessMode(ctx context.Context, db *sql.DB, store *postgres.Store) {
 	proj := &ReliableProjection{}
-	config := consumer.DefaultProcessorConfig()
-	processor := postgres.NewProcessor(db, store, &config)
+	config := consumer.DefaultSegmentProcessorConfig()
+	// For simple examples, use single segment
+	config.TotalSegments = 1
+	processor := postgres.NewSegmentProcessor(db, store, config)
 
 	// Check current checkpoint before starting
 	checkpoint := getCurrentCheckpoint(ctx, db, proj.Name())

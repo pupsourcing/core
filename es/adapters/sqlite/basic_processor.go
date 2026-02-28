@@ -16,18 +16,18 @@ var (
 	ErrConsumerStopped = errors.New("consumer stopped")
 )
 
-// Processor processes events for consumers using SQLite for checkpointing.
+// BasicProcessor processes events for consumers using SQLite for checkpointing.
 // This is the SQLite-specific implementation that manages transactions internally.
-type Processor struct {
+type BasicProcessor struct {
 	db     *sql.DB
 	store  *Store
-	config *consumer.ProcessorConfig
+	config *consumer.BasicProcessorConfig
 }
 
-// NewProcessor creates a new SQLite consumer processor.
+// NewBasicProcessor creates a new SQLite consumer processor.
 // The processor manages SQL transactions internally and coordinates checkpointing with event processing.
-func NewProcessor(db *sql.DB, store *Store, config *consumer.ProcessorConfig) *Processor {
-	return &Processor{
+func NewBasicProcessor(db *sql.DB, store *Store, config *consumer.BasicProcessorConfig) *BasicProcessor {
+	return &BasicProcessor{
 		db:     db,
 		store:  store,
 		config: config,
@@ -37,7 +37,7 @@ func NewProcessor(db *sql.DB, store *Store, config *consumer.ProcessorConfig) *P
 // checkpointName returns the checkpoint name for this processor.
 // When partitioning is enabled (TotalPartitions > 1), it appends the partition key to ensure
 // each partition tracks its checkpoint independently.
-func (p *Processor) checkpointName(consumerName string) string {
+func (p *BasicProcessor) checkpointName(consumerName string) string {
 	if p.config.TotalPartitions > 1 {
 		return fmt.Sprintf("%s_p%d", consumerName, p.config.PartitionKey)
 	}
@@ -47,7 +47,7 @@ func (p *Processor) checkpointName(consumerName string) string {
 // Run processes events for the given consumer until the context is canceled.
 // It reads events in batches, applies partition and aggregate type filters, and updates checkpoints.
 // Returns an error if the consumer handler fails.
-func (p *Processor) Run(ctx context.Context, proj consumer.Consumer) error {
+func (p *BasicProcessor) Run(ctx context.Context, proj consumer.Consumer) error {
 	if p.config.Logger != nil {
 		p.config.Logger.Info(ctx, "consumer processor starting",
 			"consumer", proj.Name(),
@@ -109,7 +109,7 @@ func (p *Processor) Run(ctx context.Context, proj consumer.Consumer) error {
 	}
 }
 
-func (p *Processor) handleIdleCycle(ctx context.Context, proj consumer.Consumer, wakeupCh <-chan struct{}, idleDelay time.Duration) (time.Duration, bool, error) {
+func (p *BasicProcessor) handleIdleCycle(ctx context.Context, proj consumer.Consumer, wakeupCh <-chan struct{}, idleDelay time.Duration) (time.Duration, bool, error) {
 	if p.config.RunMode == consumer.RunModeOneOff {
 		if p.config.Logger != nil {
 			p.config.Logger.Info(ctx, "consumer processor caught up (one-off mode)",
@@ -153,7 +153,7 @@ func (p *Processor) handleIdleCycle(ctx context.Context, proj consumer.Consumer,
 	return nextIdleDelay, false, nil
 }
 
-func (p *Processor) resetIdleDelay(ctx context.Context, proj consumer.Consumer, currentDelay time.Duration) time.Duration {
+func (p *BasicProcessor) resetIdleDelay(ctx context.Context, proj consumer.Consumer, currentDelay time.Duration) time.Duration {
 	if currentDelay != p.config.PollInterval && p.config.Logger != nil {
 		p.config.Logger.Debug(ctx, "consumer idle backoff reset",
 			"consumer", proj.Name(),
@@ -166,7 +166,7 @@ func (p *Processor) resetIdleDelay(ctx context.Context, proj consumer.Consumer, 
 	return p.config.PollInterval
 }
 
-func (p *Processor) waitForNextBatch(ctx context.Context, consumerName string, wakeupCh <-chan struct{}, delay time.Duration) (bool, error) {
+func (p *BasicProcessor) waitForNextBatch(ctx context.Context, consumerName string, wakeupCh <-chan struct{}, delay time.Duration) (bool, error) {
 	if p.config.Logger != nil {
 		p.config.Logger.Debug(ctx, "consumer idle wait starting",
 			"consumer", consumerName,
@@ -218,7 +218,7 @@ func (p *Processor) waitForNextBatch(ctx context.Context, consumerName string, w
 	}
 }
 
-func (p *Processor) applyWakeupJitter(ctx context.Context, consumerName string) error {
+func (p *BasicProcessor) applyWakeupJitter(ctx context.Context, consumerName string) error {
 	if p.config.WakeupJitter <= 0 {
 		if p.config.Logger != nil {
 			p.config.Logger.Debug(ctx, "consumer wakeup jitter skipped",
@@ -258,7 +258,7 @@ func (p *Processor) applyWakeupJitter(ctx context.Context, consumerName string) 
 	}
 }
 
-func (p *Processor) nextPollDelay(current time.Duration) time.Duration {
+func (p *BasicProcessor) nextPollDelay(current time.Duration) time.Duration {
 	if p.config.PollInterval <= 0 {
 		return 0
 	}
@@ -331,7 +331,7 @@ func buildBoundedContextFilter(proj consumer.Consumer) map[string]bool {
 // shouldProcessEvent checks if an event should be processed based on partition, aggregate type, and bounded context filters.
 //
 //nolint:gocritic // hugeParam: Intentionally pass by value to match event processing pattern
-func (p *Processor) shouldProcessEvent(event es.PersistedEvent, aggregateTypeFilter, boundedContextFilter map[string]bool) bool {
+func (p *BasicProcessor) shouldProcessEvent(event es.PersistedEvent, aggregateTypeFilter, boundedContextFilter map[string]bool) bool {
 	// Apply partition filter
 	if !p.config.PartitionStrategy.ShouldProcess(
 		event.AggregateID,
@@ -354,7 +354,7 @@ func (p *Processor) shouldProcessEvent(event es.PersistedEvent, aggregateTypeFil
 	return true
 }
 
-func (p *Processor) processBatch(ctx context.Context, proj consumer.Consumer, aggregateTypeFilter, boundedContextFilter map[string]bool) error {
+func (p *BasicProcessor) processBatch(ctx context.Context, proj consumer.Consumer, aggregateTypeFilter, boundedContextFilter map[string]bool) error {
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)

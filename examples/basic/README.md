@@ -130,14 +130,15 @@ func (p *UserProjection) Handle(ctx context.Context, tx *sql.Tx, event es.Persis
 Create a processor and run the projection:
 
 ```go
-config := consumer.DefaultProcessorConfig()
-processor := postgres.NewProcessor(db, store, &config)
+config := consumer.DefaultSegmentProcessorConfig()
+config.TotalSegments = 1  // Single segment for simple examples
+processor := postgres.NewSegmentProcessor(db, store, config)
 processor.Run(ctx, proj)
 ```
 
 ## Database Schema
 
-The migration generates three tables:
+The migration generates four tables:
 
 1. **`events`** - Stores all events in order
    - `global_position` - Monotonic sequence for ordering
@@ -149,6 +150,10 @@ The migration generates three tables:
 3. **`consumer_checkpoints`** - Tracks projection progress
    - Each projection maintains its own checkpoint
    - Allows projections to resume after restart
+
+4. **`consumer_segments`** - Manages segment-based processing
+   - Enables horizontal scaling via segment claiming
+   - Used for worker-based auto-scaling
 
 ## Transaction Control
 
@@ -170,9 +175,9 @@ This gives you full control over transaction boundaries and allows you to combin
 ## Next Steps
 
 - **More Examples**: See other examples for advanced patterns
-  - `../single-worker` - Long-running projection pattern
-  - `../multiple-projections` - Running multiple projections
-  - `../partitioned` - Horizontal scaling with partitions
+  - `../worker` - Recommended approach using Worker API for auto-scaling
+  - `../stop-resume` - Checkpoint persistence and resumption
+  - `../with-logging` - Custom logger integration
 - **Read the Docs**: Check the main README for API documentation
 - **Production Setup**: Use proper connection pooling and configuration management
 

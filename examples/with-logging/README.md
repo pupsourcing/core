@@ -121,9 +121,9 @@ The event store logs:
 Pass your logger to the processor configuration:
 
 ```go
-processorConfig := consumer.DefaultProcessorConfig()
+processorConfig := consumer.DefaultBasicProcessorConfig()
 processorConfig.Logger = projectionLogger
-processor := postgres.NewProcessor(db, store, &processorConfig)
+processor := postgres.NewBasicProcessor(db, store, &processorConfig)
 ```
 
 The processor logs:

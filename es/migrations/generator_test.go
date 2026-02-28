@@ -11,10 +11,13 @@ func TestGeneratePostgres(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	config := Config{
-		OutputFolder:     tmpDir,
-		OutputFilename:   "test_migration.sql",
-		EventsTable:      "events",
-		CheckpointsTable: "consumer_checkpoints",
+		OutputFolder:        tmpDir,
+		OutputFilename:      "test_migration.sql",
+		EventsTable:         "events",
+		CheckpointsTable:    "consumer_checkpoints",
+		SegmentsTable:       "consumer_segments",
+		AggregateHeadsTable: "aggregate_heads",
+		WorkerRegistryTable: "consumer_workers",
 	}
 
 	err := GeneratePostgres(&config)
@@ -51,6 +54,9 @@ func TestGeneratePostgres(t *testing.T) {
 		"consumer_name TEXT PRIMARY KEY",
 		"last_global_position BIGINT NOT NULL",
 		"updated_at TIMESTAMPTZ NOT NULL",
+		"CREATE TABLE IF NOT EXISTS consumer_segments",
+		"CREATE TABLE IF NOT EXISTS aggregate_heads",
+		"CREATE TABLE IF NOT EXISTS consumer_workers",
 	}
 
 	for _, required := range requiredStrings {
@@ -83,10 +89,13 @@ func TestGeneratePostgres_CustomTableNames(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	config := Config{
-		OutputFolder:     tmpDir,
-		OutputFilename:   "custom_migration.sql",
-		EventsTable:      "custom_events",
-		CheckpointsTable: "custom_checkpoints",
+		OutputFolder:        tmpDir,
+		OutputFilename:      "custom_migration.sql",
+		EventsTable:         "custom_events",
+		CheckpointsTable:    "custom_checkpoints",
+		SegmentsTable:       "custom_segments",
+		AggregateHeadsTable: "custom_aggregate_heads",
+		WorkerRegistryTable: "custom_workers",
 	}
 
 	err := GeneratePostgres(&config)
@@ -109,16 +118,22 @@ func TestGeneratePostgres_CustomTableNames(t *testing.T) {
 	if !strings.Contains(sql, "CREATE TABLE IF NOT EXISTS custom_checkpoints") {
 		t.Error("Custom checkpoints table name not used")
 	}
+	if !strings.Contains(sql, "CREATE TABLE IF NOT EXISTS custom_workers") {
+		t.Error("Custom worker registry table name not used")
+	}
 }
 
 func TestGenerateMySQL(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	config := Config{
-		OutputFolder:     tmpDir,
-		OutputFilename:   "test_migration.sql",
-		EventsTable:      "events",
-		CheckpointsTable: "consumer_checkpoints",
+		OutputFolder:        tmpDir,
+		OutputFilename:      "test_migration.sql",
+		EventsTable:         "events",
+		CheckpointsTable:    "consumer_checkpoints",
+		SegmentsTable:       "consumer_segments",
+		AggregateHeadsTable: "aggregate_heads",
+		WorkerRegistryTable: "consumer_workers",
 	}
 
 	err := GenerateMySQL(&config)
@@ -155,6 +170,9 @@ func TestGenerateMySQL(t *testing.T) {
 		"consumer_name VARCHAR(255) PRIMARY KEY",
 		"last_global_position BIGINT NOT NULL",
 		"updated_at TIMESTAMP(6) NOT NULL",
+		"CREATE TABLE IF NOT EXISTS consumer_segments",
+		"CREATE TABLE IF NOT EXISTS aggregate_heads",
+		"CREATE TABLE IF NOT EXISTS consumer_workers",
 		"ENGINE=InnoDB",
 		"CHARSET=utf8mb4",
 	}
@@ -184,10 +202,13 @@ func TestGenerateSQLite(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	config := Config{
-		OutputFolder:     tmpDir,
-		OutputFilename:   "test_migration.sql",
-		EventsTable:      "events",
-		CheckpointsTable: "consumer_checkpoints",
+		OutputFolder:        tmpDir,
+		OutputFilename:      "test_migration.sql",
+		EventsTable:         "events",
+		CheckpointsTable:    "consumer_checkpoints",
+		SegmentsTable:       "consumer_segments",
+		AggregateHeadsTable: "aggregate_heads",
+		WorkerRegistryTable: "consumer_workers",
 	}
 
 	err := GenerateSQLite(&config)
@@ -224,6 +245,9 @@ func TestGenerateSQLite(t *testing.T) {
 		"consumer_name TEXT PRIMARY KEY",
 		"last_global_position INTEGER NOT NULL",
 		"updated_at TEXT NOT NULL",
+		"CREATE TABLE IF NOT EXISTS consumer_segments",
+		"CREATE TABLE IF NOT EXISTS aggregate_heads",
+		"CREATE TABLE IF NOT EXISTS consumer_workers",
 	}
 
 	for _, required := range requiredStrings {
@@ -251,10 +275,13 @@ func TestGenerateMySQL_CustomTableNames(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	config := Config{
-		OutputFolder:     tmpDir,
-		OutputFilename:   "custom_migration.sql",
-		EventsTable:      "custom_events",
-		CheckpointsTable: "custom_checkpoints",
+		OutputFolder:        tmpDir,
+		OutputFilename:      "custom_migration.sql",
+		EventsTable:         "custom_events",
+		CheckpointsTable:    "custom_checkpoints",
+		SegmentsTable:       "custom_segments",
+		AggregateHeadsTable: "custom_aggregate_heads",
+		WorkerRegistryTable: "custom_workers",
 	}
 
 	err := GenerateMySQL(&config)
@@ -277,16 +304,22 @@ func TestGenerateMySQL_CustomTableNames(t *testing.T) {
 	if !strings.Contains(sql, "CREATE TABLE IF NOT EXISTS custom_checkpoints") {
 		t.Error("Custom checkpoints table name not used")
 	}
+	if !strings.Contains(sql, "CREATE TABLE IF NOT EXISTS custom_workers") {
+		t.Error("Custom worker registry table name not used")
+	}
 }
 
 func TestGenerateSQLite_CustomTableNames(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	config := Config{
-		OutputFolder:     tmpDir,
-		OutputFilename:   "custom_migration.sql",
-		EventsTable:      "custom_events",
-		CheckpointsTable: "custom_checkpoints",
+		OutputFolder:        tmpDir,
+		OutputFilename:      "custom_migration.sql",
+		EventsTable:         "custom_events",
+		CheckpointsTable:    "custom_checkpoints",
+		SegmentsTable:       "custom_segments",
+		AggregateHeadsTable: "custom_aggregate_heads",
+		WorkerRegistryTable: "custom_workers",
 	}
 
 	err := GenerateSQLite(&config)
@@ -308,5 +341,8 @@ func TestGenerateSQLite_CustomTableNames(t *testing.T) {
 	}
 	if !strings.Contains(sql, "CREATE TABLE IF NOT EXISTS custom_checkpoints") {
 		t.Error("Custom checkpoints table name not used")
+	}
+	if !strings.Contains(sql, "CREATE TABLE IF NOT EXISTS custom_workers") {
+		t.Error("Custom worker registry table name not used")
 	}
 }

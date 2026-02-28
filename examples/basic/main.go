@@ -117,8 +117,10 @@ func main() {
 	// Process events with projection
 	fmt.Println("\nRunning projection...")
 	proj := &UserProjection{users: []string{}}
-	config := consumer.DefaultProcessorConfig()
-	processor := postgres.NewProcessor(db, store, &config)
+	config := consumer.DefaultSegmentProcessorConfig()
+	// For simple examples, use single segment
+	config.TotalSegments = 1
+	processor := postgres.NewSegmentProcessor(db, store, config)
 
 	// Run projection for a short time
 	ctx2, cancel := context.WithTimeout(ctx, 2*time.Second)

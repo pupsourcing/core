@@ -78,6 +78,8 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 
 	// Drop existing objects to ensure clean state
 	_, err := db.Exec(`
+		DROP TABLE IF EXISTS consumer_workers CASCADE;
+		DROP TABLE IF EXISTS consumer_segments CASCADE;
 		DROP TABLE IF EXISTS consumer_checkpoints CASCADE;
 		DROP TABLE IF EXISTS aggregate_heads CASCADE;
 		DROP TABLE IF EXISTS events CASCADE;
@@ -93,6 +95,8 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 		EventsTable:         "events",
 		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
+		SegmentsTable:       "consumer_segments",
+		WorkerRegistryTable: "consumer_workers",
 	}
 
 	if err := migrations.GeneratePostgres(&config); err != nil {
@@ -170,10 +174,9 @@ func appendTestEvents(t *testing.T, ctx context.Context, db *sql.DB, store *post
 func createAndRunPartitions(ctx context.Context, db *sql.DB, store *postgres.Store, proj consumer.Consumer, totalPartitions int) error {
 	var runners []runner.ConsumerRunner
 	for i := 0; i < totalPartitions; i++ {
-		config := consumer.DefaultProcessorConfig()
-		config.PartitionKey = i
-		config.TotalPartitions = totalPartitions
-		processor := postgres.NewProcessor(db, store, &config)
+		config := consumer.DefaultSegmentProcessorConfig()
+		config.TotalSegments = totalPartitions
+		processor := postgres.NewSegmentProcessor(db, store, config)
 		runners = append(runners, runner.ConsumerRunner{
 			Consumer:  proj,
 			Processor: processor,
@@ -188,8 +191,9 @@ func createAndRunPartitions(ctx context.Context, db *sql.DB, store *postgres.Sto
 func createAndRunMultiple(ctx context.Context, db *sql.DB, store *postgres.Store, consumers []consumer.Consumer) error {
 	var runners []runner.ConsumerRunner
 	for _, proj := range consumers {
-		config := consumer.DefaultProcessorConfig()
-		processor := postgres.NewProcessor(db, store, &config)
+		config := consumer.DefaultSegmentProcessorConfig()
+		config.TotalSegments = 1
+		processor := postgres.NewSegmentProcessor(db, store, config)
 		runners = append(runners, runner.ConsumerRunner{
 			Consumer:  proj,
 			Processor: processor,
@@ -249,7 +253,7 @@ func TestRunConsumerPartitions(t *testing.T) {
 	}
 
 	// Verify checkpoints were created (one per partition)
-	rows, err := db.Query("SELECT consumer_name, last_global_position FROM consumer_checkpoints ORDER BY consumer_name")
+	rows, err := db.Query("SELECT consumer_name, checkpoint FROM consumer_segments WHERE checkpoint > 0 ORDER BY consumer_name")
 	if err != nil {
 		t.Fatalf("Failed to query checkpoints: %v", err)
 	}
@@ -316,7 +320,7 @@ func TestRunMultipleConsumers(t *testing.T) {
 	}
 
 	// Verify both consumers have checkpoints
-	rows, err := db.Query("SELECT consumer_name, last_global_position FROM consumer_checkpoints ORDER BY consumer_name")
+	rows, err := db.Query("SELECT consumer_name, checkpoint FROM consumer_segments WHERE checkpoint > 0 ORDER BY consumer_name")
 	if err != nil {
 		t.Fatalf("Failed to query checkpoints: %v", err)
 	}
@@ -387,11 +391,12 @@ func TestRunnerErrorHandling(t *testing.T) {
 	r := runner.New()
 
 	// Use small batch size to ensure we save checkpoints before failure
-	config := consumer.DefaultProcessorConfig()
+	config := consumer.DefaultSegmentProcessorConfig()
+	config.TotalSegments = 1
 	config.BatchSize = 5
 
 	// Create processor with small batch size
-	processor := postgres.NewProcessor(db, store, &config)
+	processor := postgres.NewSegmentProcessor(db, store, config)
 	runners := []runner.ConsumerRunner{
 		{Consumer: proj, Processor: processor},
 	}
@@ -407,7 +412,7 @@ func TestRunnerErrorHandling(t *testing.T) {
 
 	// Verify checkpoint was saved for events before failure
 	var checkpoint int64
-	err = db.QueryRow("SELECT last_global_position FROM consumer_checkpoints WHERE consumer_name = $1",
+	err = db.QueryRow("SELECT checkpoint FROM consumer_segments WHERE consumer_name = $1 AND checkpoint > 0",
 		"test_error_handling").Scan(&checkpoint)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -426,7 +431,7 @@ func TestRunnerErrorHandling(t *testing.T) {
 	defer cancel3()
 
 	// Create processor for resume
-	resumeProcessor := postgres.NewProcessor(db, store, &config)
+	resumeProcessor := postgres.NewSegmentProcessor(db, store, config)
 	resumeRunners := []runner.ConsumerRunner{
 		{Consumer: proj, Processor: resumeProcessor},
 	}
@@ -475,7 +480,7 @@ func TestRunnerConcurrentCheckpoints(t *testing.T) {
 	}
 
 	// Verify checkpoints for each partition exist
-	rows, err := db.Query("SELECT consumer_name, last_global_position FROM consumer_checkpoints ORDER BY consumer_name")
+	rows, err := db.Query("SELECT consumer_name, checkpoint FROM consumer_segments WHERE checkpoint > 0 ORDER BY consumer_name")
 	if err != nil {
 		t.Fatalf("Failed to query checkpoints: %v", err)
 	}

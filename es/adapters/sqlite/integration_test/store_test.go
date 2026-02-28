@@ -58,6 +58,8 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 
 	// Drop existing objects to ensure clean state
 	_, err := db.Exec(`
+		DROP TABLE IF EXISTS consumer_workers;
+		DROP TABLE IF EXISTS consumer_segments;
 		DROP TABLE IF EXISTS consumer_checkpoints;
 		DROP TABLE IF EXISTS aggregate_heads;
 		DROP TABLE IF EXISTS events;
@@ -74,6 +76,8 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 		EventsTable:         "events",
 		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
+		SegmentsTable:       "consumer_segments",
+		WorkerRegistryTable: "consumer_workers",
 	}
 
 	if err := migrations.GenerateSQLite(&config); err != nil {

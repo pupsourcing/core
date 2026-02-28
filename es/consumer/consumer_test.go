@@ -188,8 +188,8 @@ func TestHashPartitionStrategy_Distribution(t *testing.T) {
 	}
 }
 
-func TestDefaultProcessorConfig(t *testing.T) {
-	config := DefaultProcessorConfig()
+func TestDefaultBasicProcessorConfig(t *testing.T) {
+	config := DefaultBasicProcessorConfig()
 
 	// Verify default values
 	if config.BatchSize != 100 {
@@ -227,9 +227,9 @@ func TestDefaultProcessorConfig(t *testing.T) {
 	}
 }
 
-func TestProcessorConfig_CustomPollInterval(t *testing.T) {
+func TestBasicProcessorConfig_CustomPollInterval(t *testing.T) {
 	// Users should be able to customize the poll interval
-	config := ProcessorConfig{
+	config := BasicProcessorConfig{
 		PollInterval: 500 * time.Millisecond,
 	}
 
@@ -238,7 +238,7 @@ func TestProcessorConfig_CustomPollInterval(t *testing.T) {
 	}
 
 	// Zero poll interval should be allowed (for those who want busy polling)
-	config2 := ProcessorConfig{
+	config2 := BasicProcessorConfig{
 		PollInterval: 0,
 	}
 
@@ -257,16 +257,16 @@ func TestRunMode_Constants(t *testing.T) {
 	}
 }
 
-func TestDefaultProcessorConfig_RunMode(t *testing.T) {
-	config := DefaultProcessorConfig()
+func TestDefaultBasicProcessorConfig_RunMode(t *testing.T) {
+	config := DefaultBasicProcessorConfig()
 	if config.RunMode != RunModeContinuous {
 		t.Errorf("Expected default RunMode to be RunModeContinuous, got %v", config.RunMode)
 	}
 }
 
-func TestProcessorConfig_CustomRunMode(t *testing.T) {
+func TestBasicProcessorConfig_CustomRunMode(t *testing.T) {
 	// Users should be able to customize the run mode
-	config := ProcessorConfig{
+	config := BasicProcessorConfig{
 		RunMode: RunModeOneOff,
 	}
 

@@ -93,11 +93,11 @@ func TestProcessor_RunModeOneOff(t *testing.T) {
 	proj := newTestConsumer("test_oneoff")
 
 	// Configure processor in one-off mode
-	config := consumer.DefaultProcessorConfig()
+	config := consumer.DefaultBasicProcessorConfig()
 	config.RunMode = consumer.RunModeOneOff
 	config.BatchSize = 10
 
-	processor := sqlite.NewProcessor(db, store, &config)
+	processor := sqlite.NewBasicProcessor(db, store, config)
 
 	// Run should exit cleanly after processing all events
 	err = processor.Run(ctx, proj)
@@ -137,10 +137,10 @@ func TestProcessor_RunModeOneOff_EmptyStore(t *testing.T) {
 	proj := newTestConsumer("test_oneoff_empty")
 
 	// Configure processor in one-off mode
-	config := consumer.DefaultProcessorConfig()
+	config := consumer.DefaultBasicProcessorConfig()
 	config.RunMode = consumer.RunModeOneOff
 
-	processor := sqlite.NewProcessor(db, store, &config)
+	processor := sqlite.NewBasicProcessor(db, store, config)
 
 	// Run should exit cleanly immediately with no events
 	err := processor.Run(ctx, proj)
@@ -192,11 +192,11 @@ func TestProcessor_RunModeOneOff_PartialBatch(t *testing.T) {
 	proj := newTestConsumer("test_oneoff_partial")
 
 	// Configure processor in one-off mode with batch size larger than events
-	config := consumer.DefaultProcessorConfig()
+	config := consumer.DefaultBasicProcessorConfig()
 	config.RunMode = consumer.RunModeOneOff
 	config.BatchSize = 100
 
-	processor := sqlite.NewProcessor(db, store, &config)
+	processor := sqlite.NewBasicProcessor(db, store, config)
 
 	// Run should exit cleanly after processing partial batch
 	err = processor.Run(ctx, proj)
@@ -246,10 +246,10 @@ func TestProcessor_RunModeContinuous_StillWorks(t *testing.T) {
 	proj := newTestConsumer("test_continuous")
 
 	// Configure processor in continuous mode (default)
-	config := consumer.DefaultProcessorConfig()
+	config := consumer.DefaultBasicProcessorConfig()
 	// RunMode defaults to RunModeContinuous
 
-	processor := sqlite.NewProcessor(db, store, &config)
+	processor := sqlite.NewBasicProcessor(db, store, config)
 
 	// Run with timeout - should continue until context cancellation
 	ctx2, cancel := context.WithTimeout(ctx, 500*time.Millisecond)

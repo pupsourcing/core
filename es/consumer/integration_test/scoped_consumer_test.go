@@ -145,8 +145,9 @@ func TestScopedConsumer_GlobalReceivesAllEvents(t *testing.T) {
 
 	// Create global consumer
 	globalCons := &globalConsumer{name: "global_test"}
-	config := consumer.DefaultProcessorConfig()
-	processor := postgres.NewProcessor(db, store, &config)
+	config := consumer.DefaultSegmentProcessorConfig()
+	config.TotalSegments = 1
+	processor := postgres.NewSegmentProcessor(db, store, config)
 
 	// Run consumer for a short time
 	ctx2, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
@@ -252,8 +253,9 @@ func TestScopedConsumer_OnlyReceivesMatchingAggregates(t *testing.T) {
 		aggregateTypes:  []string{"User"},
 		boundedContexts: nil, // No filtering by context
 	}
-	config := consumer.DefaultProcessorConfig()
-	processor := postgres.NewProcessor(db, store, &config)
+	config := consumer.DefaultSegmentProcessorConfig()
+	config.TotalSegments = 1
+	processor := postgres.NewSegmentProcessor(db, store, config)
 
 	// Run consumer for a short time
 	ctx2, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
@@ -353,8 +355,9 @@ func TestScopedConsumer_MultipleAggregateTypes(t *testing.T) {
 		aggregateTypes:  []string{"User", "Order"},
 		boundedContexts: nil, // No filtering by context
 	}
-	config := consumer.DefaultProcessorConfig()
-	processor := postgres.NewProcessor(db, store, &config)
+	config := consumer.DefaultSegmentProcessorConfig()
+	config.TotalSegments = 1
+	processor := postgres.NewSegmentProcessor(db, store, config)
 
 	// Run consumer for a short time
 	ctx2, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
@@ -432,8 +435,9 @@ func TestScopedConsumer_EmptyAggregateTypesReceivesAll(t *testing.T) {
 		aggregateTypes:  []string{},
 		boundedContexts: nil, // No filtering by context
 	}
-	config := consumer.DefaultProcessorConfig()
-	processor := postgres.NewProcessor(db, store, &config)
+	config := consumer.DefaultSegmentProcessorConfig()
+	config.TotalSegments = 1
+	processor := postgres.NewSegmentProcessor(db, store, config)
 
 	// Run consumer for a short time
 	ctx2, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
@@ -518,8 +522,9 @@ func TestScopedConsumer_MixedConsumersWorkCorrectly(t *testing.T) {
 	}
 
 	// Run global consumer
-	config1 := consumer.DefaultProcessorConfig()
-	processor1 := postgres.NewProcessor(db, store, &config1)
+	config1 := consumer.DefaultSegmentProcessorConfig()
+	config1.TotalSegments = 1
+	processor1 := postgres.NewSegmentProcessor(db, store, config1)
 
 	ctx1, cancel1 := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel1()
@@ -530,8 +535,9 @@ func TestScopedConsumer_MixedConsumersWorkCorrectly(t *testing.T) {
 	}
 
 	// Run scoped consumer
-	config2 := consumer.DefaultProcessorConfig()
-	processor2 := postgres.NewProcessor(db, store, &config2)
+	config2 := consumer.DefaultSegmentProcessorConfig()
+	config2.TotalSegments = 1
+	processor2 := postgres.NewSegmentProcessor(db, store, config2)
 
 	ctx2, cancel2 := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel2()
@@ -658,8 +664,9 @@ func TestScopedConsumer_FilterByBoundedContext(t *testing.T) {
 	}
 
 	// Run consumers
-	config := consumer.DefaultProcessorConfig()
-	processor := postgres.NewProcessor(db, store, &config)
+	config := consumer.DefaultSegmentProcessorConfig()
+	config.TotalSegments = 1
+	processor := postgres.NewSegmentProcessor(db, store, config)
 
 	projCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
