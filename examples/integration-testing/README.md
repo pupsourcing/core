@@ -19,7 +19,7 @@ Use `RunModeOneOff` to process projections synchronously in tests:
 config := consumer.DefaultBasicProcessorConfig()
 config.RunMode = consumer.RunModeOneOff  // Exit after catching up
 
-processor := postgres.NewProcessor(db, store, &config)
+processor := postgres.NewBasicProcessor(db, store, &config)
 
 // Append test events
 appendTestEvents(ctx, db, store, testEvents)

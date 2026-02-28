@@ -21,7 +21,7 @@ var (
 )
 
 // ConsumerRunner pairs a consumer with its processor.
-// The processor is adapter-specific (postgres.Processor, mysql.Processor, etc.)
+// The processor is adapter-specific (postgres.BasicProcessor, postgres.SegmentProcessor, etc.)
 // and knows how to manage transactions and checkpoints for that storage type.
 type ConsumerRunner struct {
 	Consumer  consumer.Consumer
