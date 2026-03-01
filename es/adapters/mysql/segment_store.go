@@ -21,13 +21,17 @@ func (s *Store) InitializeSegments(ctx context.Context, tx es.DBTX, consumerName
 			"total_segments", totalSegments)
 	}
 
+	// Seed from consumer_checkpoints if available (migration from BasicProcessor).
+	// This prevents re-processing all events when switching to segment-based processing.
+	initialCheckpoint := s.getExistingCheckpoint(ctx, tx, consumerName)
+
 	query := fmt.Sprintf(`
 		INSERT IGNORE INTO %s (consumer_name, segment_id, total_segments, owner_id, checkpoint)
-		VALUES (?, ?, ?, NULL, 0)
+		VALUES (?, ?, ?, NULL, ?)
 	`, s.config.SegmentsTable)
 
 	for segmentID := 0; segmentID < totalSegments; segmentID++ {
-		_, err := tx.ExecContext(ctx, query, consumerName, segmentID, totalSegments)
+		_, err := tx.ExecContext(ctx, query, consumerName, segmentID, totalSegments, initialCheckpoint)
 		if err != nil {
 			return fmt.Errorf("failed to initialize segment %d: %w", segmentID, err)
 		}
@@ -36,10 +40,33 @@ func (s *Store) InitializeSegments(ctx context.Context, tx es.DBTX, consumerName
 	if s.config.Logger != nil {
 		s.config.Logger.Info(ctx, "segments initialized",
 			"consumer_name", consumerName,
-			"total_segments", totalSegments)
+			"total_segments", totalSegments,
+			"initial_checkpoint", initialCheckpoint)
 	}
 
 	return nil
+}
+
+// getExistingCheckpoint looks up an existing checkpoint from the consumer_checkpoints table.
+// Returns 0 if no checkpoint exists or if the table is inaccessible.
+func (s *Store) getExistingCheckpoint(ctx context.Context, tx es.DBTX, consumerName string) int64 {
+	query := fmt.Sprintf(
+		`SELECT last_global_position FROM %s WHERE consumer_name = ?`,
+		s.config.CheckpointsTable,
+	)
+
+	var checkpoint int64
+	if err := tx.QueryRowContext(ctx, query, consumerName).Scan(&checkpoint); err != nil {
+		return 0
+	}
+
+	if s.config.Logger != nil {
+		s.config.Logger.Info(ctx, "seeding segment checkpoints from existing consumer checkpoint",
+			"consumer_name", consumerName,
+			"checkpoint", checkpoint)
+	}
+
+	return checkpoint
 }
 
 // ClaimSegment implements store.SegmentStore.
