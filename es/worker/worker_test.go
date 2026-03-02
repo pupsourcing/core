@@ -39,6 +39,12 @@ func (m *mockPartitionStrategy) ShouldProcess(_ string, _, _ int) bool {
 	return true
 }
 
+type mockWakeupSource struct{}
+
+func (m *mockWakeupSource) Subscribe() (signals <-chan struct{}, unsubscribe func()) {
+	return make(chan struct{}, 1), func() {}
+}
+
 func TestDefaultConfig(t *testing.T) {
 	t.Parallel()
 
@@ -120,6 +126,13 @@ func TestDefaultConfig(t *testing.T) {
 	t.Run("Logger is nil", func(t *testing.T) {
 		if cfg.Logger != nil {
 			t.Error("Logger should be nil by default")
+		}
+	})
+
+	// WakeupSource should be nil by default
+	t.Run("WakeupSource is nil", func(t *testing.T) {
+		if cfg.WakeupSource != nil {
+			t.Error("WakeupSource should be nil by default")
 		}
 	})
 }
@@ -267,6 +280,15 @@ func TestOptions(t *testing.T) {
 				}
 			},
 		},
+		"WithWakeupSource": {
+			option: WithWakeupSource(&mockWakeupSource{}),
+			checkFunc: func(t *testing.T, c *Config) {
+				t.Helper()
+				if c.WakeupSource == nil {
+					t.Error("WakeupSource should not be nil after WithWakeupSource")
+				}
+			},
+		},
 	}
 
 	for name, tc := range tests {
@@ -301,6 +323,7 @@ func TestOptionsCompose(t *testing.T) {
 		WithDispatcherPollInterval(500 * time.Millisecond),
 		WithLogger(logger),
 		WithPartitionStrategy(strategy),
+		WithWakeupSource(&mockWakeupSource{}),
 	}
 
 	for _, opt := range options {
@@ -379,6 +402,12 @@ func TestOptionsCompose(t *testing.T) {
 		// Verify it's the mock we set
 		if _, ok := cfg.PartitionStrategy.(*mockPartitionStrategy); !ok {
 			t.Errorf("PartitionStrategy should be *mockPartitionStrategy, got %T", cfg.PartitionStrategy)
+		}
+	})
+
+	t.Run("WakeupSource", func(t *testing.T) {
+		if cfg.WakeupSource == nil {
+			t.Error("WakeupSource should not be nil")
 		}
 	})
 }
@@ -491,6 +520,7 @@ func TestNew(t *testing.T) {
 				WithDispatcherPollInterval(300 * time.Millisecond),
 				WithLogger(&mockLogger{}),
 				WithPartitionStrategy(&mockPartitionStrategy{}),
+				WithWakeupSource(&mockWakeupSource{}),
 			},
 			validate: func(t *testing.T, w *Worker) {
 				t.Helper()
@@ -539,6 +569,9 @@ func TestNew(t *testing.T) {
 				}
 				if w.config.PartitionStrategy == nil {
 					t.Error("PartitionStrategy should not be nil")
+				}
+				if w.config.WakeupSource == nil {
+					t.Error("WakeupSource should not be nil")
 				}
 			},
 		},

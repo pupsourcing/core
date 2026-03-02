@@ -718,6 +718,130 @@ func TestWorkerContextCancellation(t *testing.T) {
 	}
 }
 
+// getTestConnStr returns a Postgres connection string in DSN format (for pq.NewListener).
+func getTestConnStr() string {
+	host := os.Getenv("POSTGRES_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+
+	port := os.Getenv("POSTGRES_PORT")
+	if port == "" {
+		port = "5432"
+	}
+
+	user := os.Getenv("POSTGRES_USER")
+	if user == "" {
+		user = "postgres"
+	}
+
+	password := os.Getenv("POSTGRES_PASSWORD")
+	if password == "" {
+		password = "postgres"
+	}
+
+	dbname := os.Getenv("POSTGRES_DB")
+	if dbname == "" {
+		dbname = "pupsourcing_test"
+	}
+
+	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+}
+
+// TestWorkerWithNotifyDispatcher tests that LISTEN/NOTIFY wakes the worker instantly
+// instead of waiting for the polling interval.
+func TestWorkerWithNotifyDispatcher(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	setupTestTables(t, db)
+
+	ctx := context.Background()
+	notifyChannel := "pupsourcing_test_events"
+	store := postgres.NewStore(
+		postgres.NewStoreConfig(
+			postgres.WithNotifyChannel(notifyChannel),
+		),
+	)
+
+	// Create a counting consumer
+	cons := newCountingConsumer("test-notify-dispatcher")
+
+	// Create NotifyDispatcher with a short fallback interval for test safety
+	nd := postgres.NewNotifyDispatcher(getTestConnStr(), &postgres.NotifyDispatcherConfig{
+		Channel:          notifyChannel,
+		FallbackInterval: 10 * time.Second,
+	})
+
+	// Create Worker with NotifyDispatcher as WakeupSource and a VERY long poll interval.
+	// If events are processed within the timeout, it proves LISTEN/NOTIFY woke the worker,
+	// not the polling interval.
+	w := postgres.NewWorker(db, store,
+		worker.WithWakeupSource(nd),
+		worker.WithPollInterval(5*time.Second),
+		worker.WithMaxPollInterval(30*time.Second),
+	)
+
+	// Start worker
+	workerCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- w.Run(workerCtx, cons)
+	}()
+
+	// Give the worker time to start and the LISTEN connection to establish
+	time.Sleep(2 * time.Second)
+
+	// Append 5 events AFTER the worker is running — they should be picked up via NOTIFY
+	numEvents := 5
+	for i := 0; i < numEvents; i++ {
+		aggID := uuid.New().String()
+		event := makeEvent("TestContext", "TestAggregate", aggID)
+
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatalf("Failed to begin transaction: %v", err)
+		}
+
+		_, err = store.Append(ctx, tx, es.NoStream(), []es.Event{event})
+		if err != nil {
+			tx.Rollback()
+			t.Fatalf("Failed to append event %d: %v", i, err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("Failed to commit event %d: %v", i, err)
+		}
+	}
+
+	// Events should be processed very quickly via NOTIFY (within ~2s, not 5s+ from polling)
+	deadline := time.After(4 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-deadline:
+			cancel()
+			t.Fatalf("Timeout waiting for NOTIFY-driven processing. Got %d/%d events. "+
+				"If polling interval is 5s and this failed at 4s, LISTEN/NOTIFY is not working.",
+				cons.Count(), numEvents)
+		case <-ticker.C:
+			if cons.Count() == int64(numEvents) {
+				cancel()
+				if err := <-errCh; err != nil && err != context.Canceled {
+					t.Fatalf("Worker returned error: %v", err)
+				}
+				t.Logf("All %d events processed via NOTIFY-driven wake", numEvents)
+				return
+			}
+		}
+	}
+}
+
 // TestWorkerResumesFromCheckpoint tests that worker resumes from last checkpoint.
 func TestWorkerResumesFromCheckpoint(t *testing.T) {
 	db := getTestDB(t)

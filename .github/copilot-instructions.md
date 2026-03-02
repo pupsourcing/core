@@ -232,6 +232,26 @@ w := postgres.NewWorker(db, store,
 err := w.Run(ctx, &MyProjection{})
 ```
 
+**With LISTEN/NOTIFY (zero idle polling):**
+```go
+// Store sends pg_notify on Append()
+store := postgres.NewStore(postgres.NewStoreConfig(
+    postgres.WithNotifyChannel("pupsourcing_events"),
+))
+
+// NotifyDispatcher uses pq.NewListener for instant wakes
+nd := postgres.NewNotifyDispatcher(connStr, &postgres.NotifyDispatcherConfig{
+    Channel:          "pupsourcing_events",
+    FallbackInterval: 30 * time.Second,
+})
+
+w := postgres.NewWorker(db, store,
+    worker.WithWakeupSource(nd),
+    worker.WithTotalSegments(4),
+)
+err := w.Run(ctx, &MyProjection{})
+```
+
 **SegmentProcessor with fixed partitioning:**
 ```go
 config := consumer.DefaultSegmentProcessorConfig()
