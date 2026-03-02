@@ -25,9 +25,9 @@
 //     w := postgres.NewWorker(db, store)
 //     w.Run(ctx, &MyProjection{}, &OtherProjection{})
 //
-//     Or use the lower-level Processor API for custom workflows:
-//     config := consumer.DefaultBasicProcessorConfig()
-//     processor := sqlite.NewBasicProcessor(db, store, config)
+//     Or use the lower-level SegmentProcessor API for custom workflows:
+//     config := consumer.DefaultSegmentProcessorConfig()
+//     processor := postgres.NewSegmentProcessor(db, store, config)
 //     processor.Run(ctx, myConsumer)
 //
 // See the examples directory for complete working examples.

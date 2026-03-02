@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -188,65 +187,6 @@ func TestHashPartitionStrategy_Distribution(t *testing.T) {
 	}
 }
 
-func TestDefaultBasicProcessorConfig(t *testing.T) {
-	config := DefaultBasicProcessorConfig()
-
-	// Verify default values
-	if config.BatchSize != 100 {
-		t.Errorf("Expected BatchSize 100, got %d", config.BatchSize)
-	}
-	if config.PartitionKey != 0 {
-		t.Errorf("Expected PartitionKey 0, got %d", config.PartitionKey)
-	}
-	if config.TotalPartitions != 1 {
-		t.Errorf("Expected TotalPartitions 1, got %d", config.TotalPartitions)
-	}
-	if config.Logger != nil {
-		t.Error("Expected Logger to be nil by default")
-	}
-	if config.PartitionStrategy == nil {
-		t.Error("Expected PartitionStrategy to be non-nil")
-	}
-
-	// Verify poll interval is set to prevent CPU spinning
-	expectedPollInterval := 100 * time.Millisecond
-	if config.PollInterval != expectedPollInterval {
-		t.Errorf("Expected PollInterval %v, got %v", expectedPollInterval, config.PollInterval)
-	}
-	if config.MaxPollInterval != 5*time.Second {
-		t.Errorf("Expected MaxPollInterval 5s, got %v", config.MaxPollInterval)
-	}
-	if config.PollBackoffFactor != 2.0 {
-		t.Errorf("Expected PollBackoffFactor 2.0, got %v", config.PollBackoffFactor)
-	}
-	if config.WakeupJitter != 25*time.Millisecond {
-		t.Errorf("Expected WakeupJitter 25ms, got %v", config.WakeupJitter)
-	}
-	if config.WakeupSource != nil {
-		t.Error("Expected WakeupSource to be nil by default")
-	}
-}
-
-func TestBasicProcessorConfig_CustomPollInterval(t *testing.T) {
-	// Users should be able to customize the poll interval
-	config := BasicProcessorConfig{
-		PollInterval: 500 * time.Millisecond,
-	}
-
-	if config.PollInterval != 500*time.Millisecond {
-		t.Errorf("Expected custom PollInterval 500ms, got %v", config.PollInterval)
-	}
-
-	// Zero poll interval should be allowed (for those who want busy polling)
-	config2 := BasicProcessorConfig{
-		PollInterval: 0,
-	}
-
-	if config2.PollInterval != 0 {
-		t.Errorf("Expected zero PollInterval, got %v", config2.PollInterval)
-	}
-}
-
 func TestRunMode_Constants(t *testing.T) {
 	// Ensure constants are defined correctly
 	if RunModeContinuous != 0 {
@@ -257,20 +197,9 @@ func TestRunMode_Constants(t *testing.T) {
 	}
 }
 
-func TestDefaultBasicProcessorConfig_RunMode(t *testing.T) {
-	config := DefaultBasicProcessorConfig()
+func TestDefaultSegmentProcessorConfig_RunMode(t *testing.T) {
+	config := DefaultSegmentProcessorConfig()
 	if config.RunMode != RunModeContinuous {
 		t.Errorf("Expected default RunMode to be RunModeContinuous, got %v", config.RunMode)
-	}
-}
-
-func TestBasicProcessorConfig_CustomRunMode(t *testing.T) {
-	// Users should be able to customize the run mode
-	config := BasicProcessorConfig{
-		RunMode: RunModeOneOff,
-	}
-
-	if config.RunMode != RunModeOneOff {
-		t.Errorf("Expected custom RunMode to be RunModeOneOff, got %v", config.RunMode)
 	}
 }

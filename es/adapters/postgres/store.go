@@ -21,9 +21,6 @@ type StoreConfig struct {
 	// EventsTable is the name of the events table
 	EventsTable string
 
-	// CheckpointsTable is the name of the consumer checkpoints table
-	CheckpointsTable string
-
 	// AggregateHeadsTable is the name of the aggregate version tracking table
 	AggregateHeadsTable string
 
@@ -38,7 +35,6 @@ type StoreConfig struct {
 func DefaultStoreConfig() *StoreConfig {
 	return &StoreConfig{
 		EventsTable:         "events",
-		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
 		SegmentsTable:       "consumer_segments",
 		WorkerRegistryTable: "consumer_workers",
@@ -60,13 +56,6 @@ func WithLogger(logger es.Logger) StoreOption {
 func WithEventsTable(tableName string) StoreOption {
 	return func(c *StoreConfig) {
 		c.EventsTable = tableName
-	}
-}
-
-// WithCheckpointsTable sets a custom consumer checkpoints table name.
-func WithCheckpointsTable(tableName string) StoreOption {
-	return func(c *StoreConfig) {
-		c.CheckpointsTable = tableName
 	}
 }
 
@@ -550,38 +539,4 @@ func (s *Store) ReadAggregateStream(ctx context.Context, tx es.DBTX, boundedCont
 		AggregateID:    aggregateID,
 		Events:         events,
 	}, nil
-}
-
-// GetCheckpoint implements store.CheckpointStore.
-func (s *Store) GetCheckpoint(ctx context.Context, tx es.DBTX, consumerName string) (int64, error) {
-	query := fmt.Sprintf(`
-		SELECT last_global_position 
-		FROM %s 
-		WHERE consumer_name = $1
-	`, s.config.CheckpointsTable)
-
-	var checkpoint int64
-	err := tx.QueryRowContext(ctx, query, consumerName).Scan(&checkpoint)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, nil
-		}
-		return 0, err
-	}
-	return checkpoint, nil
-}
-
-// UpdateCheckpoint implements store.CheckpointStore.
-func (s *Store) UpdateCheckpoint(ctx context.Context, tx es.DBTX, consumerName string, position int64) error {
-	query := fmt.Sprintf(`
-		INSERT INTO %s (consumer_name, last_global_position, updated_at)
-		VALUES ($1, $2, NOW())
-		ON CONFLICT (consumer_name)
-		DO UPDATE SET 
-			last_global_position = EXCLUDED.last_global_position,
-			updated_at = EXCLUDED.updated_at
-	`, s.config.CheckpointsTable)
-
-	_, err := tx.ExecContext(ctx, query, consumerName, position)
-	return err
 }

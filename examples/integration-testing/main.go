@@ -9,15 +9,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	_ "modernc.org/sqlite"
+	_ "github.com/lib/pq"
 
 	"github.com/pupsourcing/core/es"
-	"github.com/pupsourcing/core/es/adapters/sqlite"
+	"github.com/pupsourcing/core/es/adapters/postgres"
 	"github.com/pupsourcing/core/es/consumer"
 	"github.com/pupsourcing/core/es/migrations"
+	"github.com/pupsourcing/core/es/worker"
 )
 
-// UserProjection is a simple projection that counts user events
+// UserProjection is a simple consumer that counts user events.
 type UserProjection struct {
 	userCount int
 }
@@ -39,13 +40,10 @@ func (p *UserProjection) GetCount() int {
 }
 
 func main() {
-	// This example demonstrates RunModeOneOff usage
-	// For actual testing, see main_test.go
-
-	fmt.Println("Integration Testing Example - One-Off Projection Mode")
-	fmt.Println("=====================================================")
+	fmt.Println("Integration Testing Example - One-Off Consumer Mode")
+	fmt.Println("====================================================")
 	fmt.Println()
-	fmt.Println("This example shows how to use RunModeOneOff for synchronous projection testing.")
+	fmt.Println("This example shows how to use RunModeOneOff for synchronous consumer testing.")
 	fmt.Println("See main_test.go for a complete integration test example.")
 	fmt.Println()
 
@@ -58,7 +56,6 @@ func main() {
 }
 
 func run() error {
-	// Setup database
 	db, err := setupDatabase()
 	if err != nil {
 		return fmt.Errorf("failed to setup database: %w", err)
@@ -66,48 +63,39 @@ func run() error {
 	defer db.Close()
 
 	ctx := context.Background()
-	store := sqlite.NewStore(sqlite.DefaultStoreConfig())
+	store := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	// Append test events
 	fmt.Println("Appending 5 test events...")
 
 	if err := appendTestEvents(ctx, db, store, 5); err != nil {
 		return fmt.Errorf("failed to append events: %w", err)
 	}
 
-	// Process with one-off mode
+	// Process with one-off mode using the Worker API
 	proj := &UserProjection{}
-	config := consumer.DefaultBasicProcessorConfig()
-	config.RunMode = consumer.RunModeOneOff
-
-	processor := sqlite.NewBasicProcessor(db, store, config)
+	w := postgres.NewWorker(db, store,
+		worker.WithTotalSegments(1),
+		worker.WithRunMode(consumer.RunModeOneOff),
+	)
 
 	fmt.Println("Processing events in one-off mode...")
-	if err := processor.Run(ctx, proj); err != nil {
-		return fmt.Errorf("projection failed: %w", err)
+	if err := w.Run(ctx, proj); err != nil {
+		return fmt.Errorf("consumer processing failed: %w", err)
 	}
 
 	fmt.Printf("✓ Processed %d user events\n", proj.GetCount())
-	fmt.Println("✓ Projection exited cleanly after catching up")
+	fmt.Println("✓ Consumer exited cleanly after catching up")
 
 	return nil
 }
 
 func setupDatabase() (*sql.DB, error) {
-	dbFile := fmt.Sprintf("/tmp/pupsourcing_example_%d.db", time.Now().UnixNano())
-
-	db, err := sql.Open("sqlite", dbFile)
-	if err != nil {
-		return nil, err
+	connStr := os.Getenv("DATABASE_URL")
+	if connStr == "" {
+		connStr = "host=localhost port=5432 user=postgres password=postgres dbname=pupsourcing_test sslmode=disable"
 	}
 
-	// Cleanup on exit
-	go func() {
-		<-context.Background().Done()
-		os.Remove(dbFile)
-	}()
-
-	_, err = db.Exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
+	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		return nil, err
 	}
@@ -120,13 +108,12 @@ func setupDatabase() (*sql.DB, error) {
 		OutputFolder:        tmpDir,
 		OutputFilename:      migrationFilename,
 		EventsTable:         "events",
-		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
 		SegmentsTable:       "consumer_segments",
 		WorkerRegistryTable: "consumer_workers",
 	}
 
-	if genErr := migrations.GenerateSQLite(&config); genErr != nil {
+	if genErr := migrations.GeneratePostgres(&config); genErr != nil {
 		return nil, genErr
 	}
 
@@ -141,14 +128,13 @@ func setupDatabase() (*sql.DB, error) {
 		return nil, execErr
 	}
 
-	// Cleanup migration file
 	//nolint:errcheck // cleanup error is not critical
 	os.Remove(migrationFile)
 
 	return db, nil
 }
 
-func appendTestEvents(ctx context.Context, db *sql.DB, store *sqlite.Store, count int) error {
+func appendTestEvents(ctx context.Context, db *sql.DB, store *postgres.Store, count int) error {
 	for i := 0; i < count; i++ {
 		event := es.Event{
 			BoundedContext: "TestContext",

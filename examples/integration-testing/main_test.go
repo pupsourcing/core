@@ -1,3 +1,5 @@
+//go:build integration
+
 package main
 
 import (
@@ -9,21 +11,21 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	_ "modernc.org/sqlite"
+	_ "github.com/lib/pq"
 
 	"github.com/pupsourcing/core/es"
-	"github.com/pupsourcing/core/es/adapters/sqlite"
+	"github.com/pupsourcing/core/es/adapters/postgres"
 	"github.com/pupsourcing/core/es/consumer"
 	"github.com/pupsourcing/core/es/migrations"
+	"github.com/pupsourcing/core/es/worker"
 )
 
-func TestProjection_OneOffMode(t *testing.T) {
-	// Setup
+func TestConsumer_OneOffMode(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
 	ctx := context.Background()
-	store := sqlite.NewStore(sqlite.DefaultStoreConfig())
+	store := postgres.NewStore(postgres.DefaultStoreConfig())
 
 	// Arrange: Append test events (each user is a separate aggregate)
 	eventCount := 10
@@ -55,18 +57,17 @@ func TestProjection_OneOffMode(t *testing.T) {
 		}
 	}
 
-	// Act: Process with one-off mode
+	// Act: Process with one-off mode using the Worker API
 	proj := &UserProjection{}
-	config := consumer.DefaultBasicProcessorConfig()
-	config.RunMode = consumer.RunModeOneOff
-	config.BatchSize = 5 // Process in multiple batches
+	w := postgres.NewWorker(db, store,
+		worker.WithTotalSegments(1),
+		worker.WithRunMode(consumer.RunModeOneOff),
+		worker.WithBatchSize(5),
+	)
 
-	processor := sqlite.NewBasicProcessor(db, store, config)
+	err := w.Run(ctx, proj)
 
-	// This will process all events and exit cleanly
-	err := processor.Run(ctx, proj)
-
-	// Assert: Verify results
+	// Assert
 	if err != nil {
 		t.Fatalf("Expected nil error in one-off mode, got: %v", err)
 	}
@@ -75,16 +76,12 @@ func TestProjection_OneOffMode(t *testing.T) {
 		t.Errorf("Expected %d events processed, got %d", eventCount, proj.GetCount())
 	}
 
-	// Verify checkpoint was saved
-	tx2, txErr := db.BeginTx(ctx, nil)
-	if txErr != nil {
-		t.Fatalf("Failed to begin transaction for checkpoint check: %v", txErr)
-	}
-	checkpoint, err := store.GetCheckpoint(ctx, tx2, proj.Name())
-	if commitErr := tx2.Commit(); commitErr != nil {
-		t.Fatalf("Failed to commit checkpoint check: %v", commitErr)
-	}
-
+	// Verify checkpoint was saved (in consumer_segments table)
+	var checkpoint int64
+	err = db.QueryRow(
+		"SELECT checkpoint FROM consumer_segments WHERE consumer_name = $1 AND segment_id = 0",
+		proj.Name(),
+	).Scan(&checkpoint)
 	if err != nil {
 		t.Fatalf("Failed to get checkpoint: %v", err)
 	}
@@ -97,27 +94,21 @@ func TestProjection_OneOffMode(t *testing.T) {
 	t.Logf("✓ Checkpoint saved at position %d", checkpoint)
 }
 
-func TestProjection_OneOffMode_EmptyStore(t *testing.T) {
-	// Setup
+func TestConsumer_OneOffMode_EmptyStore(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
 	ctx := context.Background()
-	store := sqlite.NewStore(sqlite.DefaultStoreConfig())
 
-	// No events appended - empty store
-
-	// Process with one-off mode
 	proj := &UserProjection{}
-	config := consumer.DefaultBasicProcessorConfig()
-	config.RunMode = consumer.RunModeOneOff
+	store := postgres.NewStore(postgres.DefaultStoreConfig())
+	w := postgres.NewWorker(db, store,
+		worker.WithTotalSegments(1),
+		worker.WithRunMode(consumer.RunModeOneOff),
+	)
 
-	processor := sqlite.NewBasicProcessor(db, store, config)
+	err := w.Run(ctx, proj)
 
-	// Should exit immediately with no error
-	err := processor.Run(ctx, proj)
-
-	// Assert
 	if err != nil {
 		t.Fatalf("Expected nil error with empty store, got: %v", err)
 	}
@@ -129,13 +120,12 @@ func TestProjection_OneOffMode_EmptyStore(t *testing.T) {
 	t.Log("✓ Handled empty store correctly in one-off mode")
 }
 
-func TestProjection_ContinuousMode_StillWorks(t *testing.T) {
-	// This test verifies backward compatibility
+func TestConsumer_ContinuousMode(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
 	ctx := context.Background()
-	store := sqlite.NewStore(sqlite.DefaultStoreConfig())
+	store := postgres.NewStore(postgres.DefaultStoreConfig())
 
 	// Append test events (each user is a separate aggregate)
 	for i := 0; i < 3; i++ {
@@ -166,20 +156,16 @@ func TestProjection_ContinuousMode_StillWorks(t *testing.T) {
 		}
 	}
 
-	// Process with continuous mode (default)
+	// Process with continuous mode (default) — runs until context cancellation
 	proj := &UserProjection{}
-	config := consumer.DefaultBasicProcessorConfig()
-	// RunMode defaults to RunModeContinuous
+	w := postgres.NewWorker(db, store, worker.WithTotalSegments(1))
 
-	processor := sqlite.NewBasicProcessor(db, store, config)
-
-	// Run with timeout - should continue until context cancellation
-	ctx2, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	ctx2, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-	err := processor.Run(ctx2, proj)
+	err := w.Run(ctx2, proj)
 
-	// Should get context.DeadlineExceeded (continuous mode doesn't exit on its own)
+	// Should get context.DeadlineExceeded
 	if err == nil {
 		t.Error("Expected timeout error in continuous mode")
 	}
@@ -188,41 +174,74 @@ func TestProjection_ContinuousMode_StillWorks(t *testing.T) {
 		t.Errorf("Expected at least 3 events processed, got %d", proj.GetCount())
 	}
 
-	t.Log("✓ Continuous mode still works (backward compatible)")
+	t.Log("✓ Continuous mode works correctly")
 }
 
-// setupTestDB creates a clean test database with tables
 func setupTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	dbFile := fmt.Sprintf("/tmp/pupsourcing_test_%d.db", time.Now().UnixNano())
-	t.Cleanup(func() {
-		os.Remove(dbFile)
-	})
+	host := os.Getenv("POSTGRES_HOST")
+	if host == "" {
+		host = "localhost"
+	}
 
-	db, err := sql.Open("sqlite", dbFile)
+	port := os.Getenv("POSTGRES_PORT")
+	if port == "" {
+		port = "5432"
+	}
+
+	user := os.Getenv("POSTGRES_USER")
+	if user == "" {
+		user = "postgres"
+	}
+
+	password := os.Getenv("POSTGRES_PASSWORD")
+	if password == "" {
+		password = "postgres"
+	}
+
+	dbname := os.Getenv("POSTGRES_DB")
+	if dbname == "" {
+		dbname = "pupsourcing_test"
+	}
+
+	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+
+	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
 
-	_, err = db.Exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
-	if err != nil {
-		t.Fatalf("Failed to configure database: %v", err)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		t.Fatalf("Failed to ping database: %v", err)
 	}
 
-	// Generate and execute migrations
+	// Drop and recreate tables
+	_, err = db.Exec(`
+DROP TABLE IF EXISTS consumer_workers CASCADE;
+DROP TABLE IF EXISTS consumer_segments CASCADE;
+DROP TABLE IF EXISTS aggregate_heads CASCADE;
+DROP TABLE IF EXISTS events CASCADE;
+`)
+	if err != nil {
+		t.Fatalf("Failed to drop tables: %v", err)
+	}
+
 	tmpDir := t.TempDir()
 	config := migrations.Config{
 		OutputFolder:        tmpDir,
 		OutputFilename:      "test.sql",
 		EventsTable:         "events",
-		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
 		SegmentsTable:       "consumer_segments",
 		WorkerRegistryTable: "consumer_workers",
 	}
 
-	if genErr := migrations.GenerateSQLite(&config); genErr != nil {
+	if genErr := migrations.GeneratePostgres(&config); genErr != nil {
 		t.Fatalf("Failed to generate migration: %v", genErr)
 	}
 

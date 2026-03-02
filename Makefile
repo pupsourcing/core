@@ -19,15 +19,7 @@ test-integration-local: ## Start databases and run integration tests locally
 	@until docker compose exec -T postgres pg_isready -U postgres > /dev/null 2>&1; do \
 		sleep 1; \
 	done
-	@until docker compose exec -T mysql mysql -h localhost -u root -proot -e "SELECT 1" > /dev/null 2>&1; do \
-		sleep 1; \
-	done
-	@until docker compose exec -T mysql mysql -h localhost -u root -proot -e "USE pupsourcing_test; SELECT 1" > /dev/null 2>&1; do \
-		echo "MySQL database not ready - sleeping"; \
-		sleep 1; \
-	done
 	POSTGRES_HOST=localhost POSTGRES_PORT=5432 POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_DB=pupsourcing_test \
-	MYSQL_HOST=localhost MYSQL_PORT=3306 MYSQL_USER=test MYSQL_PASSWORD=test MYSQL_DB=pupsourcing_test \
 	go test -p 1 -v -tags=integration ./... || true
 	docker compose down
 

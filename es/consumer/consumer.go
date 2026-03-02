@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"hash/fnv"
-	"time"
 
 	"github.com/pupsourcing/core/es"
 )
@@ -173,70 +172,6 @@ type WakeupSource interface {
 	// Subscribe registers a consumer processor for wake signals.
 	// Returns a receive-only signal channel and an unsubscribe function.
 	Subscribe() (signals <-chan struct{}, unsubscribe func())
-}
-
-// BasicProcessorConfig configures a consumer processor.
-type BasicProcessorConfig struct {
-	// PartitionStrategy determines which events this processor handles
-	PartitionStrategy PartitionStrategy
-
-	// Logger is an optional logger for observability.
-	// If nil, logging is disabled (zero overhead).
-	Logger es.Logger
-
-	// WakeupSource is an optional best-effort signal source.
-	// If nil, processors rely purely on PollInterval fallback polling.
-	WakeupSource WakeupSource
-
-	// PollBackoffFactor controls exponential backoff growth for idle fallback polling.
-	// Values <= 1 disable growth (constant PollInterval fallback).
-	// Default is 2.0.
-	PollBackoffFactor float64
-
-	// PollInterval is the duration to wait when no events are available.
-	// This prevents tight polling loops that consume excessive CPU.
-	// A value of 0 means no delay (busy polling - not recommended).
-	// Default is 100ms, which provides a good balance between latency and CPU usage.
-	PollInterval time.Duration
-
-	// MaxPollInterval is the upper bound for idle fallback polling when backoff is enabled.
-	// Default is 5s.
-	MaxPollInterval time.Duration
-
-	// WakeupJitter is the random delay applied after receiving a wake signal.
-	// This helps smooth spikes when many consumers wake at once.
-	// Default is 25ms.
-	WakeupJitter time.Duration
-
-	// BatchSize is the number of events to read per batch
-	BatchSize int
-
-	// PartitionKey identifies this processor instance (0-indexed)
-	PartitionKey int
-
-	// TotalPartitions is the total number of processor instances
-	TotalPartitions int
-
-	// RunMode determines processing behavior.
-	// Default: RunModeContinuous
-	RunMode RunMode
-}
-
-// DefaultBasicProcessorConfig returns the default configuration.
-func DefaultBasicProcessorConfig() *BasicProcessorConfig {
-	return &BasicProcessorConfig{
-		BatchSize:         100,
-		PartitionKey:      0,
-		TotalPartitions:   1,
-		PartitionStrategy: HashPartitionStrategy{},
-		Logger:            nil,                    // No logging by default
-		PollInterval:      100 * time.Millisecond, // Prevent CPU spinning
-		MaxPollInterval:   5 * time.Second,        // Bound idle backoff
-		PollBackoffFactor: 2.0,                    // Exponential backoff by default
-		WakeupJitter:      25 * time.Millisecond,  // Smooth wake-up spikes
-		WakeupSource:      nil,                    // No dispatcher by default
-		RunMode:           RunModeContinuous,      // Continuous mode by default
-	}
 }
 
 // ProcessorRunner is the interface that adapter-specific processors must implement.
