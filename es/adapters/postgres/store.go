@@ -29,6 +29,12 @@ type StoreConfig struct {
 
 	// WorkerRegistryTable is the name of the worker registry table
 	WorkerRegistryTable string
+
+	// NotifyChannel is the Postgres NOTIFY channel name for event append notifications.
+	// When set, Append() executes pg_notify within the same transaction, so the
+	// notification fires only when the transaction commits.
+	// Leave empty to disable notifications.
+	NotifyChannel string
 }
 
 // DefaultStoreConfig returns the default configuration.
@@ -77,6 +83,15 @@ func WithSegmentsTable(tableName string) StoreOption {
 func WithWorkerRegistryTable(tableName string) StoreOption {
 	return func(c *StoreConfig) {
 		c.WorkerRegistryTable = tableName
+	}
+}
+
+// WithNotifyChannel sets the Postgres NOTIFY channel for event append notifications.
+// When configured, each Append() call issues pg_notify within the same transaction,
+// so the notification fires only when the transaction commits.
+func WithNotifyChannel(channel string) StoreOption {
+	return func(c *StoreConfig) {
+		c.NotifyChannel = channel
 	}
 }
 
@@ -304,6 +319,15 @@ func (s *Store) Append(ctx context.Context, tx es.DBTX, expectedVersion es.Expec
 	_, err = tx.ExecContext(ctx, upsertQuery, firstEvent.BoundedContext, firstEvent.AggregateType, firstEvent.AggregateID, latestVersion)
 	if err != nil {
 		return es.AppendResult{}, fmt.Errorf("failed to update aggregate head: %w", err)
+	}
+
+	// Send transactional NOTIFY — fires only when the caller commits the TX
+	if s.config.NotifyChannel != "" {
+		lastPos := globalPositions[len(globalPositions)-1]
+		_, err = tx.ExecContext(ctx, "SELECT pg_notify($1, $2)", s.config.NotifyChannel, fmt.Sprintf("%d", lastPos))
+		if err != nil {
+			return es.AppendResult{}, fmt.Errorf("failed to send notify: %w", err)
+		}
 	}
 
 	if s.config.Logger != nil {

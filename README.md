@@ -174,6 +174,34 @@ w := postgres.NewWorker(db, store,
 err := w.Run(ctx, &UserProjection{}, &OrderProjection{}, &NotificationConsumer{})
 ```
 
+**LISTEN/NOTIFY (zero idle polling):**
+
+Replace the built-in polling dispatcher with Postgres LISTEN/NOTIFY for instant event wake-ups and zero idle overhead:
+
+```go
+import "github.com/pupsourcing/core/es/worker"
+
+// 1. Configure the store to NOTIFY on event append
+store := postgres.NewStore(postgres.NewStoreConfig(
+    postgres.WithNotifyChannel("pupsourcing_events"),
+))
+
+// 2. Create a NotifyDispatcher (uses pq.NewListener under the hood)
+nd := postgres.NewNotifyDispatcher(connStr, &postgres.NotifyDispatcherConfig{
+    Channel:          "pupsourcing_events", // Must match WithNotifyChannel
+    FallbackInterval: 30 * time.Second,     // Safety net for missed notifications
+})
+
+// 3. Pass it to the Worker — replaces internal polling dispatcher
+w := postgres.NewWorker(db, store,
+    worker.WithWakeupSource(nd),
+    worker.WithTotalSegments(4),
+)
+err := w.Run(ctx, &UserProjection{})
+```
+
+The `NotifyDispatcher` requires a Postgres connection string (not `*sql.DB`) because `pq.NewListener` manages its own dedicated connection with automatic reconnect. Notifications are transactional — they fire only when the `Append()` transaction commits, guaranteeing no phantom wakes.
+
 ## Scaling
 
 Workers auto-scale via segment claiming. Each worker claims a fair share of segments and rebalances when workers join or leave. No coordinator needed — workers self-organize using database-level atomic operations.

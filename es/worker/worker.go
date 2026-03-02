@@ -25,6 +25,10 @@ type Config struct {
 	// Default: nil
 	Logger es.Logger
 
+	// WakeupSource is an optional external wakeup source (e.g., NotifyDispatcher).
+	// When set, it takes precedence over the built-in polling Dispatcher.
+	WakeupSource consumer.WakeupSource
+
 	// HeartbeatInterval is how often each worker updates its heartbeat timestamp.
 	// Default: 5s
 	HeartbeatInterval time.Duration
@@ -68,14 +72,14 @@ type Config struct {
 	// Default: 100
 	BatchSize int
 
-	// EnableDispatcher enables the optional dispatcher for best-effort wake signals.
-	// Default: true
-	EnableDispatcher bool
-
 	// RunMode determines how the processor handles event processing.
 	// Default: RunModeContinuous (processes events indefinitely)
 	// Set to RunModeOneOff for integration tests (processes all events and exits).
 	RunMode consumer.RunMode
+
+	// EnableDispatcher enables the optional dispatcher for best-effort wake signals.
+	// Default: true
+	EnableDispatcher bool
 }
 
 // DefaultConfig returns the default Worker configuration.
@@ -198,6 +202,16 @@ func WithRunMode(mode consumer.RunMode) Option {
 	}
 }
 
+// WithWakeupSource sets an external wakeup source (e.g., NotifyDispatcher).
+// When set, this takes precedence over the built-in polling Dispatcher.
+// The wakeup source must be started separately or implement the Runnable
+// interface (Run(ctx) error) to be started automatically by the Worker.
+func WithWakeupSource(ws consumer.WakeupSource) Option {
+	return func(c *Config) {
+		c.WakeupSource = ws
+	}
+}
+
 // ProcessorFactory creates a ProcessorRunner from a SegmentProcessorConfig.
 // This abstraction allows the Worker to be storage-agnostic.
 type ProcessorFactory func(config *consumer.SegmentProcessorConfig) consumer.ProcessorRunner
@@ -233,13 +247,19 @@ func (w *Worker) Run(ctx context.Context, consumers ...consumer.Consumer) error 
 		return fmt.Errorf("at least one consumer is required")
 	}
 
+	// Determine the wakeup source: external WakeupSource takes precedence over built-in Dispatcher.
+	var wakeupSource consumer.WakeupSource
 	var dispatcher *consumer.Dispatcher
-	if w.config.EnableDispatcher {
+
+	if w.config.WakeupSource != nil {
+		wakeupSource = w.config.WakeupSource
+	} else if w.config.EnableDispatcher {
 		dispatcherCfg := &consumer.DispatcherConfig{
 			PollInterval: w.config.DispatcherPollInterval,
 			Logger:       w.config.Logger,
 		}
 		dispatcher = consumer.NewDispatcher(w.db, w.posReader, dispatcherCfg)
+		wakeupSource = dispatcher
 	}
 
 	runners := make([]runner.ConsumerRunner, 0, len(consumers))
@@ -258,8 +278,8 @@ func (w *Worker) Run(ctx context.Context, consumers ...consumer.Consumer) error 
 			BatchSize:         w.config.BatchSize,
 			RunMode:           w.config.RunMode,
 		}
-		if dispatcher != nil {
-			segCfg.WakeupSource = dispatcher
+		if wakeupSource != nil {
+			segCfg.WakeupSource = wakeupSource
 		}
 
 		processor := w.factory(segCfg)
@@ -269,38 +289,41 @@ func (w *Worker) Run(ctx context.Context, consumers ...consumer.Consumer) error 
 		})
 	}
 
-	// Start dispatcher if enabled
-	// Use a derived context so we can stop the dispatcher when the runner finishes.
+	// Start wakeup source if it has a Run method (e.g., NotifyDispatcher, Dispatcher).
 	internalCtx, internalCancel := context.WithCancel(ctx)
 	defer internalCancel()
 
-	var dispatcherErrCh chan error
-	if dispatcher != nil {
-		dispatcherErrCh = make(chan error, 1)
+	type runnable interface {
+		Run(ctx context.Context) error
+	}
+
+	var wakeupErrCh chan error
+	if r, ok := wakeupSource.(runnable); ok {
+		wakeupErrCh = make(chan error, 1)
 		go func() {
-			dispatcherErrCh <- dispatcher.Run(internalCtx)
+			wakeupErrCh <- r.Run(internalCtx)
 		}()
 	}
 
 	// Run all consumers
 	runnerErr := runner.New().Run(internalCtx, runners)
 
-	// Cancel internal context to stop the dispatcher
+	// Cancel internal context to stop the wakeup source
 	internalCancel()
 
-	// Wait for dispatcher to finish if it was started
-	var dispatcherErr error
-	if dispatcherErrCh != nil {
-		dispatcherErr = <-dispatcherErrCh
+	// Wait for wakeup source to finish if it was started
+	var wakeupErr error
+	if wakeupErrCh != nil {
+		wakeupErr = <-wakeupErrCh
 	}
 
 	// Return the first non-context error, prioritizing runner errors
 	if runnerErr != nil && !errors.Is(runnerErr, context.Canceled) && !errors.Is(runnerErr, context.DeadlineExceeded) {
 		return runnerErr
 	}
-	if dispatcherErr != nil && !errors.Is(dispatcherErr, context.Canceled) &&
-		!errors.Is(dispatcherErr, context.DeadlineExceeded) {
-		return dispatcherErr
+	if wakeupErr != nil && !errors.Is(wakeupErr, context.Canceled) &&
+		!errors.Is(wakeupErr, context.DeadlineExceeded) {
+		return wakeupErr
 	}
 
 	return runnerErr
