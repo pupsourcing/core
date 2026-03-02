@@ -17,7 +17,7 @@ pupsourcing provides minimal, reliable infrastructure for event sourcing in Go a
 ## Key Features
 
 - **Clean Architecture** - No "infrastructure creep" into your domain model (no annotations, no framework-specific base structs)
-- **Multiple Database Adapters** - PostgreSQL, MySQL, and SQLite
+- **PostgreSQL Adapter** - Production-ready PostgreSQL implementation
 - **Bounded Context Support** - Events scoped to bounded contexts for domain-driven design alignment
 - **Optimistic Concurrency** - Automatic conflict detection via database constraints
 - **Auto-Scaling Workers** - Segment-based consumer processing. Deploy N instances, they self-organize
@@ -32,14 +32,8 @@ go get github.com/pupsourcing/core
 
 Choose your database driver:
 ```bash
-# PostgreSQL (recommended for production)
+# PostgreSQL
 go get github.com/lib/pq
-
-# SQLite (embedded, ideal for testing)
-go get modernc.org/sqlite
-
-# MySQL/MariaDB
-go get github.com/go-sql-driver/mysql
 ```
 
 ## Quick Start
@@ -210,8 +204,6 @@ Complete runnable examples are available in the [`examples/`](./examples) direct
 - **[worker](./examples/worker/)** - Recommended consumer pattern with auto-scaling (coming soon)
 - **[scoped-projections](./examples/scoped-projections/)** - Filtering events by bounded context and aggregate type
 - **[cockroachdb-basic](./examples/cockroachdb-basic/)** - CockroachDB compatibility
-- **[mysql-basic](./examples/mysql-basic/)** - MySQL adapter
-- **[sqlite-basic](./examples/sqlite-basic/)** - SQLite adapter
 - **[integration-testing](./examples/integration-testing/)** - Testing patterns
 - **[with-logging](./examples/with-logging/)** - Observability
 - **[stop-resume](./examples/stop-resume/)** - Checkpoint persistence
@@ -234,7 +226,7 @@ make test-integration-local
 ```
 
 This command automatically:
-1. Starts PostgreSQL and MySQL containers via `docker compose`
+1. Starts a PostgreSQL container via `docker compose`
 2. Runs all integration tests
 3. Cleans up containers
 

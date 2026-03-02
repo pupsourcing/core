@@ -90,7 +90,7 @@ func TestSegmentStore_InitializeSegments(t *testing.T) {
 	})
 }
 
-func TestSegmentStore_InitializeSegments_SeedsFromCheckpoints(t *testing.T) {
+func TestSegmentStore_InitializeSegments_DefaultsToZero(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -99,93 +99,62 @@ func TestSegmentStore_InitializeSegments_SeedsFromCheckpoints(t *testing.T) {
 	ctx := context.Background()
 	store := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	t.Run("seeds checkpoint from consumer_checkpoints when available", func(t *testing.T) {
-		consumerName := "test-consumer-seed"
+	consumerName := "test-consumer-no-prior"
 
-		// Simulate a prior BasicProcessor by inserting into consumer_checkpoints
-		_, err := db.ExecContext(ctx,
-			`INSERT INTO consumer_checkpoints (consumer_name, last_global_position, updated_at) VALUES ($1, $2, NOW())`,
-			consumerName, 500)
-		if err != nil {
-			t.Fatalf("Failed to insert checkpoint: %v", err)
+	err := store.InitializeSegments(ctx, db, consumerName, 4)
+	if err != nil {
+		t.Fatalf("InitializeSegments failed: %v", err)
+	}
+
+	segments, err := store.GetSegments(ctx, db, consumerName)
+	if err != nil {
+		t.Fatalf("GetSegments failed: %v", err)
+	}
+
+	for _, seg := range segments {
+		if seg.Checkpoint != 0 {
+			t.Errorf("Segment %d: expected checkpoint=0, got %d", seg.SegmentID, seg.Checkpoint)
 		}
+	}
+}
 
-		// Initialize segments — should seed from position 500
-		err = store.InitializeSegments(ctx, db, consumerName, 4)
-		if err != nil {
-			t.Fatalf("InitializeSegments failed: %v", err)
-		}
+func TestSegmentStore_InitializeSegments_DoesNotOverwriteExistingCheckpoints(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
 
-		segments, err := store.GetSegments(ctx, db, consumerName)
-		if err != nil {
-			t.Fatalf("GetSegments failed: %v", err)
-		}
+	setupTestTables(t, db)
 
-		for _, seg := range segments {
-			if seg.Checkpoint != 500 {
-				t.Errorf("Segment %d: expected checkpoint=500, got %d", seg.SegmentID, seg.Checkpoint)
-			}
-		}
-	})
+	ctx := context.Background()
+	store := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	t.Run("does not overwrite existing segment checkpoints", func(t *testing.T) {
-		consumerName := "test-consumer-seed-idempotent"
+	consumerName := "test-consumer-idempotent"
 
-		// Insert a prior checkpoint at 200
-		_, err := db.ExecContext(ctx,
-			`INSERT INTO consumer_checkpoints (consumer_name, last_global_position, updated_at) VALUES ($1, $2, NOW())`,
-			consumerName, 200)
-		if err != nil {
-			t.Fatalf("Failed to insert checkpoint: %v", err)
-		}
+	// First init — segments start at 0
+	err := store.InitializeSegments(ctx, db, consumerName, 4)
+	if err != nil {
+		t.Fatalf("First InitializeSegments failed: %v", err)
+	}
 
-		// First init — segments should start at 200
-		err = store.InitializeSegments(ctx, db, consumerName, 4)
-		if err != nil {
-			t.Fatalf("First InitializeSegments failed: %v", err)
-		}
+	// Advance segment 0 checkpoint to 300
+	err = store.UpdateSegmentCheckpoint(ctx, db, consumerName, 0, 300)
+	if err != nil {
+		t.Fatalf("UpdateSegmentCheckpoint failed: %v", err)
+	}
 
-		// Advance segment 0 checkpoint to 300
-		err = store.UpdateSegmentCheckpoint(ctx, db, consumerName, 0, 300)
-		if err != nil {
-			t.Fatalf("UpdateSegmentCheckpoint failed: %v", err)
-		}
+	// Re-initialize — should NOT overwrite segment 0 back to 0
+	err = store.InitializeSegments(ctx, db, consumerName, 4)
+	if err != nil {
+		t.Fatalf("Second InitializeSegments failed: %v", err)
+	}
 
-		// Re-initialize — should NOT overwrite segment 0 back to 200
-		err = store.InitializeSegments(ctx, db, consumerName, 4)
-		if err != nil {
-			t.Fatalf("Second InitializeSegments failed: %v", err)
-		}
+	cp, err := store.GetSegmentCheckpoint(ctx, db, consumerName, 0)
+	if err != nil {
+		t.Fatalf("GetSegmentCheckpoint failed: %v", err)
+	}
 
-		cp, err := store.GetSegmentCheckpoint(ctx, db, consumerName, 0)
-		if err != nil {
-			t.Fatalf("GetSegmentCheckpoint failed: %v", err)
-		}
-
-		if cp != 300 {
-			t.Errorf("Segment 0: expected checkpoint=300 (preserved), got %d", cp)
-		}
-	})
-
-	t.Run("defaults to zero when no prior checkpoint", func(t *testing.T) {
-		consumerName := "test-consumer-no-prior"
-
-		err := store.InitializeSegments(ctx, db, consumerName, 4)
-		if err != nil {
-			t.Fatalf("InitializeSegments failed: %v", err)
-		}
-
-		segments, err := store.GetSegments(ctx, db, consumerName)
-		if err != nil {
-			t.Fatalf("GetSegments failed: %v", err)
-		}
-
-		for _, seg := range segments {
-			if seg.Checkpoint != 0 {
-				t.Errorf("Segment %d: expected checkpoint=0, got %d", seg.SegmentID, seg.Checkpoint)
-			}
-		}
-	})
+	if cp != 300 {
+		t.Errorf("Segment 0: expected checkpoint=300 (preserved), got %d", cp)
+	}
 }
 
 func TestSegmentStore_ClaimAndRelease(t *testing.T) {

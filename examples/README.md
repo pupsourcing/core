@@ -46,43 +46,6 @@ cd basic
 go run main.go
 ```
 
-### [SQLite Basic](./sqlite-basic/)
-**Database:** SQLite  
-**Difficulty:** Beginner  
-**Best for:** Testing, embedded applications, no server required
-
-Demonstrates event sourcing with SQLite (embedded database).
-
-**What you'll learn:**
-- Using SQLite adapter (no server needed)
-- Perfect for testing and CI/CD
-- Local-first applications
-- Migration generation for SQLite
-
-**Run it:**
-```bash
-cd sqlite-basic
-go run main.go
-```
-
-### [MySQL Basic](./mysql-basic/)
-**Database:** MySQL/MariaDB  
-**Difficulty:** Beginner  
-**Best for:** MySQL infrastructure
-
-Demonstrates event sourcing with MySQL/MariaDB.
-
-**Prerequisites:**
-```bash
-docker run -d -p 3306:3306 -e MYSQL_ROOT_PASSWORD=password -e MYSQL_DATABASE=pupsourcing_example mysql:8
-```
-
-**Run it:**
-```bash
-cd mysql-basic
-go run main.go
-```
-
 ### [CockroachDB Basic](./cockroachdb-basic/)
 **Database:** CockroachDB  
 **Difficulty:** Beginner  
@@ -194,7 +157,7 @@ go run main.go
 
 Most examples require:
 - Go 1.23 or later
-- PostgreSQL 12+ running locally (except SQLite examples which need no database server)
+- PostgreSQL 12+ running locally
 
 Start PostgreSQL:
 ```bash
@@ -231,7 +194,7 @@ docker run -d -p 5432:5432 \
 
 **Building a CQRS application?**
 1. Start with [Worker](./worker/) for running multiple projections
-2. Read [Scaling Guide](https://pupsourcing.gopup.dev/scaling)
+2. Read [Deployment Guide](https://pupsourcing.gopup.dev/deployment)
 
 ## Key Concepts
 
@@ -341,17 +304,16 @@ Check events exist:
 SELECT COUNT(*) FROM events;
 ```
 
-Check projection checkpoint:
+Check consumer checkpoint:
 ```sql
-SELECT * FROM consumer_checkpoints;
+SELECT * FROM consumer_segments;
 ```
 
 ## Next Steps
 
 - Read [Getting Started Guide](https://pupsourcing.gopup.dev/getting-started)
 - Study [Core Concepts](https://pupsourcing.gopup.dev/core-concepts)
-- Review [Scaling Guide](https://pupsourcing.gopup.dev/scaling)
-- Explore [API Reference](https://pupsourcing.gopup.dev/api-reference)
+- Explore the [Deployment Guide](https://pupsourcing.gopup.dev/deployment)
 
 ## Contributing
 

@@ -71,6 +71,11 @@ type Config struct {
 	// EnableDispatcher enables the optional dispatcher for best-effort wake signals.
 	// Default: true
 	EnableDispatcher bool
+
+	// RunMode determines how the processor handles event processing.
+	// Default: RunModeContinuous (processes events indefinitely)
+	// Set to RunModeOneOff for integration tests (processes all events and exits).
+	RunMode consumer.RunMode
 }
 
 // DefaultConfig returns the default Worker configuration.
@@ -186,6 +191,13 @@ func WithLogger(l es.Logger) Option {
 	}
 }
 
+// WithRunMode sets the run mode (Continuous or OneOff).
+func WithRunMode(mode consumer.RunMode) Option {
+	return func(c *Config) {
+		c.RunMode = mode
+	}
+}
+
 // ProcessorFactory creates a ProcessorRunner from a SegmentProcessorConfig.
 // This abstraction allows the Worker to be storage-agnostic.
 type ProcessorFactory func(config *consumer.SegmentProcessorConfig) consumer.ProcessorRunner
@@ -244,7 +256,7 @@ func (w *Worker) Run(ctx context.Context, consumers ...consumer.Consumer) error 
 			PollBackoffFactor: w.config.PollBackoffFactor,
 			TotalSegments:     w.config.TotalSegments,
 			BatchSize:         w.config.BatchSize,
-			RunMode:           consumer.RunModeContinuous,
+			RunMode:           w.config.RunMode,
 		}
 		if dispatcher != nil {
 			segCfg.WakeupSource = dispatcher

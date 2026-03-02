@@ -232,13 +232,12 @@ w := postgres.NewWorker(db, store,
 err := w.Run(ctx, &MyProjection{})
 ```
 
-**BasicProcessor with fixed partitioning:**
+**SegmentProcessor with fixed partitioning:**
 ```go
-config := consumer.DefaultBasicProcessorConfig()
-config.TotalPartitions = 4  // Total number of workers
-config.PartitionKey = 0     // This worker's partition (0-3)
+config := consumer.DefaultSegmentProcessorConfig()
+config.TotalSegments = 4
 
-processor := sqlite.NewBasicProcessor(db, store, config)
+processor := postgres.NewSegmentProcessor(db, store, config)
 err := processor.Run(ctx, myConsumer)
 ```
 
@@ -272,5 +271,4 @@ Current focus (v1):
 
 Future considerations:
 - Snapshots for long-lived aggregates
-- Additional database adapters (MySQL, SQLite)
 - Observability hooks and metrics

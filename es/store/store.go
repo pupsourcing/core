@@ -5,7 +5,7 @@
 // Event Storage: EventStore, EventReader, AggregateStreamReader - for persisting and
 // reading domain events.
 //
-// Consumer Infrastructure: SegmentStore, CheckpointStore - for coordinating distributed
+// Consumer Infrastructure: SegmentStore - for coordinating distributed
 // consumers and tracking processing progress.
 //
 // Adapters (e.g., postgres.Store) implement both categories, sharing the underlying
@@ -99,21 +99,4 @@ type AggregateStreamReader interface {
 	// Use stream.Version() to get the current aggregate version.
 	// Use stream.IsEmpty() to check if any events were found.
 	ReadAggregateStream(ctx context.Context, tx es.DBTX, boundedContext, aggregateType string, aggregateID string, fromVersion, toVersion *int64) (es.Stream, error)
-}
-
-// CheckpointStore defines the interface for managing consumer checkpoints.
-// Checkpoints track the last processed event position for each consumer,
-// enabling consumers to resume processing from where they left off.
-// This interface allows adapters to implement checkpoint persistence
-// using their native storage mechanisms.
-type CheckpointStore interface {
-	// GetCheckpoint retrieves the last processed global position for a consumer.
-	// Returns 0 if no checkpoint exists for the consumer (indicating it should start from the beginning).
-	// The checkpoint is read within the provided transaction for consistency.
-	GetCheckpoint(ctx context.Context, tx es.DBTX, consumerName string) (int64, error)
-
-	// UpdateCheckpoint updates the checkpoint for a consumer to the given position.
-	// This operation is performed within the provided transaction to ensure atomicity
-	// with event processing. If a checkpoint doesn't exist, it will be created.
-	UpdateCheckpoint(ctx context.Context, tx es.DBTX, consumerName string, position int64) error
 }

@@ -79,7 +79,6 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 	_, err := db.Exec(`
 		DROP TABLE IF EXISTS consumer_workers CASCADE;
 		DROP TABLE IF EXISTS consumer_segments CASCADE;
-		DROP TABLE IF EXISTS consumer_checkpoints CASCADE;
 		DROP TABLE IF EXISTS aggregate_heads CASCADE;
 		DROP TABLE IF EXISTS events CASCADE;
 	`)
@@ -92,7 +91,6 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 		OutputFolder:        tmpDir,
 		OutputFilename:      "test.sql",
 		EventsTable:         "events",
-		CheckpointsTable:    "consumer_checkpoints",
 		AggregateHeadsTable: "aggregate_heads",
 		SegmentsTable:       "consumer_segments",
 		WorkerRegistryTable: "consumer_workers",
