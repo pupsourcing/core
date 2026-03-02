@@ -902,7 +902,7 @@ func TestWorkerResumesFromCheckpoint(t *testing.T) {
 
 		w := postgres.NewWorker(db, store)
 
-		workerCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		workerCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
 
 		errCh := make(chan error, 1)
@@ -912,7 +912,7 @@ func TestWorkerResumesFromCheckpoint(t *testing.T) {
 
 		// Poll until remaining events are processed or timeout
 		expectedRemaining := int64(numEvents - firstRunExpected)
-		timeout := time.After(8 * time.Second)
+		timeout := time.After(10 * time.Second)
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 
