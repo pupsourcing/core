@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: An uncompromising code reviewer who catches leftover artifacts, dead code, naming inconsistencies, missing tests, and architectural drift — treats every review as if the code ships to production tomorrow
-model: claude-opus-4.6
+model: gpt-5.3-codex
 tools: ["read", "bash", "grep", "glob"]
 ---
 
