@@ -718,6 +718,129 @@ func TestWorkerContextCancellation(t *testing.T) {
 	}
 }
 
+func TestWorkerReclaimsDetachedSegments(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	setupTestTables(t, db)
+
+	ctx := context.Background()
+	store := postgres.NewStore(postgres.DefaultStoreConfig())
+
+	consumerName := "test-worker-reclaim-detached"
+	cons := newCountingConsumer(consumerName)
+
+	w := postgres.NewWorker(db, store,
+		worker.WithTotalSegments(4),
+		worker.WithRebalanceInterval(200*time.Millisecond),
+		worker.WithHeartbeatInterval(200*time.Millisecond),
+		worker.WithStaleThreshold(5*time.Second),
+		worker.WithPollInterval(50*time.Millisecond),
+		worker.WithMaxPollInterval(200*time.Millisecond),
+	)
+
+	workerCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- w.Run(workerCtx, cons)
+	}()
+
+	// Wait for initial segment claims and capture owner ID.
+	var ownerID string
+	{
+		deadline := time.After(6 * time.Second)
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+
+	initialClaims:
+		for {
+			select {
+			case <-deadline:
+				cancel()
+				t.Fatal("timeout waiting for worker to claim all segments")
+			case <-ticker.C:
+				segments, err := store.GetSegments(ctx, db, consumerName)
+				if err != nil || len(segments) != 4 {
+					continue
+				}
+
+				allOwned := true
+				sameOwner := true
+				var candidate string
+				for i, seg := range segments {
+					if seg.OwnerID == nil {
+						allOwned = false
+						break
+					}
+					if i == 0 {
+						candidate = *seg.OwnerID
+						continue
+					}
+					if *seg.OwnerID != candidate {
+						sameOwner = false
+						break
+					}
+				}
+
+				if allOwned && sameOwner && candidate != "" {
+					ownerID = candidate
+					break initialClaims
+				}
+			}
+		}
+	}
+	// Simulate detached ownership for two segments while worker goroutines keep running.
+	_, err := db.ExecContext(ctx, `
+		UPDATE consumer_segments
+		SET owner_id = NULL
+		WHERE consumer_name = $1
+		  AND segment_id IN (0, 1)
+	`, consumerName)
+	if err != nil {
+		cancel()
+		t.Fatalf("failed to detach segment ownership: %v", err)
+	}
+
+	// Worker should reclaim the detached segments on the next rebalance cycle.
+	{
+		deadline := time.After(6 * time.Second)
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-deadline:
+				cancel()
+				t.Fatal("timeout waiting for detached segments to be reclaimed")
+			case <-ticker.C:
+				segments, err := store.GetSegments(ctx, db, consumerName)
+				if err != nil || len(segments) != 4 {
+					continue
+				}
+
+				allReclaimed := true
+				for _, seg := range segments {
+					if seg.OwnerID == nil || *seg.OwnerID != ownerID {
+						allReclaimed = false
+						break
+					}
+				}
+
+				if allReclaimed {
+					cancel()
+					runErr := <-errCh
+					if runErr != nil && runErr != context.Canceled {
+						t.Fatalf("worker returned unexpected error: %v", runErr)
+					}
+					return
+				}
+			}
+		}
+	}
+}
+
 // getTestConnStr returns a Postgres connection string in DSN format (for pq.NewListener).
 func getTestConnStr() string {
 	host := os.Getenv("POSTGRES_HOST")
