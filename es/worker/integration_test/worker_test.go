@@ -998,6 +998,12 @@ func TestWorkerResumesFromCheckpoint(t *testing.T) {
 	}
 
 	consumerName := "test-worker-resume"
+	// Keep this test single-threaded and per-event transactional to avoid
+	// nondeterministic over-processing from multi-segment concurrency.
+	workerOpts := []worker.Option{
+		worker.WithTotalSegments(1),
+		worker.WithBatchSize(1),
+	}
 
 	// First run - process first 4 events, error on 5th
 	firstRunExpected := 4
@@ -1010,7 +1016,7 @@ func TestWorkerResumesFromCheckpoint(t *testing.T) {
 			return nil
 		}
 
-		w := postgres.NewWorker(db, store)
+		w := postgres.NewWorker(db, store, workerOpts...)
 		_ = w.Run(ctx, cons) // Expect error
 
 		firstRunCount := cons.Count()
@@ -1023,7 +1029,7 @@ func TestWorkerResumesFromCheckpoint(t *testing.T) {
 	{
 		cons := newCountingConsumer(consumerName)
 
-		w := postgres.NewWorker(db, store)
+		w := postgres.NewWorker(db, store, workerOpts...)
 
 		workerCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
