@@ -259,13 +259,16 @@ func (p *SegmentProcessor) rebalance(ctx context.Context, cons consumer.Consumer
 		return err
 	}
 
-	// Release excess segments
-	if err := p.releaseExcess(ctx, cons.Name(), mySegments, fairShare, workersMu, workers); err != nil {
+	// Release excess segments and compute current DB ownership after release attempts.
+	currentOwned, err := p.releaseExcess(ctx, cons.Name(), mySegments, fairShare, workersMu, workers)
+	if err != nil {
 		return err
 	}
 
 	// Claim available segments (up to fair share)
-	return p.claimAvailable(ctx, cons, fairShare, aggregateTypeFilter, boundedContextFilter, workersMu, workers, workerErrCh)
+	return p.claimAvailable(
+		ctx, cons, currentOwned, fairShare, aggregateTypeFilter, boundedContextFilter, workersMu, workers, workerErrCh,
+	)
 }
 
 // reclaimStale reclaims stale segments from failed workers.
@@ -346,9 +349,17 @@ func (p *SegmentProcessor) calculateFairShare(ctx context.Context, consumerName 
 }
 
 // releaseExcess releases segments beyond fair share.
-func (p *SegmentProcessor) releaseExcess(ctx context.Context, consumerName string, mySegments []*store.Segment, fairShare int, workersMu *sync.Mutex, workers map[int]*segmentWorker) error {
+// It returns the number of segments still owned in DB after release attempts.
+func (p *SegmentProcessor) releaseExcess(
+	ctx context.Context,
+	consumerName string,
+	mySegments []*store.Segment,
+	fairShare int,
+	workersMu *sync.Mutex,
+	workers map[int]*segmentWorker,
+) (int, error) {
 	if len(mySegments) <= fairShare {
-		return nil
+		return len(mySegments), nil
 	}
 
 	excess := len(mySegments) - fairShare
@@ -358,6 +369,7 @@ func (p *SegmentProcessor) releaseExcess(ctx context.Context, consumerName strin
 			"count", excess)
 	}
 
+	released := 0
 	for i := 0; i < excess; i++ {
 		seg := mySegments[len(mySegments)-1-i]
 		p.stopSegmentWorker(seg.SegmentID, workersMu, workers)
@@ -368,19 +380,27 @@ func (p *SegmentProcessor) releaseExcess(ctx context.Context, consumerName strin
 					"segment_id", seg.SegmentID,
 					"error", err)
 			}
+			continue
 		}
+		released++
 	}
 
-	return nil
+	return len(mySegments) - released, nil
 }
 
 // claimAvailable claims available segments up to fair share.
-func (p *SegmentProcessor) claimAvailable(ctx context.Context, cons consumer.Consumer, fairShare int, aggregateTypeFilter, boundedContextFilter map[string]bool, workersMu *sync.Mutex, workers map[int]*segmentWorker, workerErrCh chan error) error {
-	workersMu.Lock()
-	currentCount := len(workers)
-	workersMu.Unlock()
-
-	for currentCount < fairShare {
+func (p *SegmentProcessor) claimAvailable(
+	ctx context.Context,
+	cons consumer.Consumer,
+	currentOwned int,
+	fairShare int,
+	aggregateTypeFilter, boundedContextFilter map[string]bool,
+	workersMu *sync.Mutex,
+	workers map[int]*segmentWorker,
+	workerErrCh chan error,
+) error {
+	ownedCount := currentOwned
+	for ownedCount < fairShare {
 		seg, err := p.store.ClaimSegment(ctx, p.db, cons.Name(), p.ownerID)
 		if err != nil {
 			return fmt.Errorf("failed to claim segment: %w", err)
@@ -390,10 +410,7 @@ func (p *SegmentProcessor) claimAvailable(ctx context.Context, cons consumer.Con
 		}
 
 		p.startSegmentWorker(ctx, cons, seg.SegmentID, aggregateTypeFilter, boundedContextFilter, workersMu, workers, workerErrCh)
-
-		workersMu.Lock()
-		currentCount = len(workers)
-		workersMu.Unlock()
+		ownedCount++
 	}
 
 	return nil
