@@ -51,6 +51,11 @@ type Config struct {
 	// Default: 5s
 	MaxPollInterval time.Duration
 
+	// MaxPostBatchPause is the maximum adaptive pause applied after successful
+	// non-empty batches in continuous mode. Set to <= 0 to disable.
+	// Default: 100ms
+	MaxPostBatchPause time.Duration
+
 	// WakeupJitter is the random delay applied after receiving a wake signal.
 	// Default: 25ms
 	WakeupJitter time.Duration
@@ -92,6 +97,7 @@ func DefaultConfig() *Config {
 		BatchSize:              100,
 		PollInterval:           100 * time.Millisecond,
 		MaxPollInterval:        5 * time.Second,
+		MaxPostBatchPause:      100 * time.Millisecond,
 		PollBackoffFactor:      2.0,
 		WakeupJitter:           25 * time.Millisecond,
 		PartitionStrategy:      consumer.HashPartitionStrategy{},
@@ -150,6 +156,13 @@ func WithPollInterval(d time.Duration) Option {
 func WithMaxPollInterval(d time.Duration) Option {
 	return func(c *Config) {
 		c.MaxPollInterval = d
+	}
+}
+
+// WithMaxPostBatchPause sets the maximum adaptive post-batch pause.
+func WithMaxPostBatchPause(d time.Duration) Option {
+	return func(c *Config) {
+		c.MaxPostBatchPause = d
 	}
 }
 
@@ -272,6 +285,7 @@ func (w *Worker) Run(ctx context.Context, consumers ...consumer.Consumer) error 
 			RebalanceInterval: w.config.RebalanceInterval,
 			PollInterval:      w.config.PollInterval,
 			MaxPollInterval:   w.config.MaxPollInterval,
+			MaxPostBatchPause: w.config.MaxPostBatchPause,
 			WakeupJitter:      w.config.WakeupJitter,
 			PollBackoffFactor: w.config.PollBackoffFactor,
 			TotalSegments:     w.config.TotalSegments,

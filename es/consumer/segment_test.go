@@ -40,6 +40,9 @@ func TestDefaultSegmentProcessorConfig(t *testing.T) {
 	if config.MaxPollInterval != 5*time.Second {
 		t.Errorf("MaxPollInterval = %v, want %v", config.MaxPollInterval, 5*time.Second)
 	}
+	if config.MaxPostBatchPause != 100*time.Millisecond {
+		t.Errorf("MaxPostBatchPause = %v, want %v", config.MaxPostBatchPause, 100*time.Millisecond)
+	}
 	if config.PollBackoffFactor != 2.0 {
 		t.Errorf("PollBackoffFactor = %v, want %v", config.PollBackoffFactor, 2.0)
 	}
@@ -118,6 +121,9 @@ func TestSegmentProcessorConfig_ZeroValues(t *testing.T) {
 	if config.MaxPollInterval != 0 {
 		t.Errorf("zero-value MaxPollInterval = %v, want 0", config.MaxPollInterval)
 	}
+	if config.MaxPostBatchPause != 0 {
+		t.Errorf("zero-value MaxPostBatchPause = %v, want 0", config.MaxPostBatchPause)
+	}
 	if config.PollBackoffFactor != 0.0 {
 		t.Errorf("zero-value PollBackoffFactor = %v, want 0.0", config.PollBackoffFactor)
 	}
@@ -142,6 +148,7 @@ func TestSegmentProcessorConfig_CustomValues(t *testing.T) {
 		BatchSize:         200,
 		PollInterval:      200 * time.Millisecond,
 		MaxPollInterval:   10 * time.Second,
+		MaxPostBatchPause: 150 * time.Millisecond,
 		PollBackoffFactor: 1.5,
 		WakeupJitter:      50 * time.Millisecond,
 		RunMode:           RunModeOneOff,
@@ -167,6 +174,9 @@ func TestSegmentProcessorConfig_CustomValues(t *testing.T) {
 	}
 	if config.MaxPollInterval != 10*time.Second {
 		t.Errorf("MaxPollInterval = %v, want %v", config.MaxPollInterval, 10*time.Second)
+	}
+	if config.MaxPostBatchPause != 150*time.Millisecond {
+		t.Errorf("MaxPostBatchPause = %v, want %v", config.MaxPostBatchPause, 150*time.Millisecond)
 	}
 	if config.PollBackoffFactor != 1.5 {
 		t.Errorf("PollBackoffFactor = %v, want 1.5", config.PollBackoffFactor)

@@ -54,6 +54,12 @@ type SegmentProcessorConfig struct {
 	// Default: 5s
 	MaxPollInterval time.Duration
 
+	// MaxPostBatchPause is the maximum adaptive pause after successful non-empty
+	// batch processing in continuous mode. The pause grows under sustained load
+	// and shrinks/resets as load cools. Set to <= 0 to disable post-batch pause.
+	// Default: 100ms
+	MaxPostBatchPause time.Duration
+
 	// WakeupJitter is the random delay applied after receiving a wake signal.
 	// Default: 25ms
 	WakeupJitter time.Duration
@@ -92,6 +98,7 @@ func DefaultSegmentProcessorConfig() *SegmentProcessorConfig {
 		Logger:            nil,
 		PollInterval:      100 * time.Millisecond,
 		MaxPollInterval:   5 * time.Second,
+		MaxPostBatchPause: 100 * time.Millisecond,
 		PollBackoffFactor: 2.0,
 		WakeupJitter:      25 * time.Millisecond,
 		WakeupSource:      nil,

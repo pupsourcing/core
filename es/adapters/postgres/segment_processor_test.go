@@ -3,6 +3,9 @@ package postgres
 import (
 	"sort"
 	"testing"
+	"time"
+
+	"github.com/pupsourcing/core/es/consumer"
 )
 
 // rankBasedFairShare computes the fair share for a worker at the given rank.
@@ -259,4 +262,95 @@ func TestRankBasedFairShare_RebalancingExamples(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestNextAdaptivePostBatchPause(t *testing.T) {
+	proc := &SegmentProcessor{
+		config: &consumer.SegmentProcessorConfig{
+			RunMode:           consumer.RunModeContinuous,
+			BatchSize:         10,
+			MaxPostBatchPause: 100 * time.Millisecond,
+		},
+	}
+
+	tests := []struct {
+		name      string
+		current   time.Duration
+		batchSize int
+		want      time.Duration
+	}{
+		{
+			name:      "starts at minimum on first full batch",
+			current:   0,
+			batchSize: 10,
+			want:      5 * time.Millisecond,
+		},
+		{
+			name:      "doubles on sustained full batches",
+			current:   10 * time.Millisecond,
+			batchSize: 10,
+			want:      20 * time.Millisecond,
+		},
+		{
+			name:      "caps at max pause",
+			current:   80 * time.Millisecond,
+			batchSize: 10,
+			want:      100 * time.Millisecond,
+		},
+		{
+			name:      "partial batch shrinks pause",
+			current:   20 * time.Millisecond,
+			batchSize: 4,
+			want:      10 * time.Millisecond,
+		},
+		{
+			name:      "small pause shrinks to zero on partial batch",
+			current:   5 * time.Millisecond,
+			batchSize: 4,
+			want:      0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := proc.nextAdaptivePostBatchPause(tt.current, tt.batchSize)
+			if got != tt.want {
+				t.Errorf("nextAdaptivePostBatchPause() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNextAdaptivePostBatchPause_DisabledOrOneOff(t *testing.T) {
+	tests := []struct {
+		name   string
+		config consumer.SegmentProcessorConfig
+	}{
+		{
+			name: "disabled when max pause is zero",
+			config: consumer.SegmentProcessorConfig{
+				RunMode:           consumer.RunModeContinuous,
+				BatchSize:         10,
+				MaxPostBatchPause: 0,
+			},
+		},
+		{
+			name: "disabled in one-off mode",
+			config: consumer.SegmentProcessorConfig{
+				RunMode:           consumer.RunModeOneOff,
+				BatchSize:         10,
+				MaxPostBatchPause: 100 * time.Millisecond,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			proc := &SegmentProcessor{config: &tt.config}
+			got := proc.nextAdaptivePostBatchPause(50*time.Millisecond, 10)
+			if got != 0 {
+				t.Errorf("nextAdaptivePostBatchPause() = %v, want 0", got)
+			}
+		})
+	}
 }
