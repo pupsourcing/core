@@ -158,7 +158,7 @@ err := w.Run(ctx, &UserProjection{})
 
 The Worker manages segment-based processing with an internal dispatcher for wakeup optimization. Deploy the same binary multiple times — workers automatically claim and rebalance segments.
 
-**Customizing the Worker:**
+**Worker Configuration:**
 
 ```go
 import "github.com/pupsourcing/core/es/worker"
@@ -168,11 +168,17 @@ w := postgres.NewWorker(db, store,
     worker.WithLogger(myLogger),         // Optional observability
     worker.WithBatchSize(200),           // Events per batch
     worker.WithPollInterval(50*time.Millisecond),
+    worker.WithMaxPostBatchPause(100*time.Millisecond), // Max adaptive post-batch pause (default)
 )
 
 // Run multiple consumers in the same worker
 err := w.Run(ctx, &UserProjection{}, &OrderProjection{}, &NotificationConsumer{})
 ```
+
+Adaptive post-batch throttling is enabled by default (`MaxPostBatchPause = 100ms`). In continuous mode, the
+pause is applied only after successful non-empty batches; it grows under sustained full batches, shrinks/resets
+as load cools, and is capped by `MaxPostBatchPause`. Use `worker.WithMaxPostBatchPause(...)` to configure it,
+and set `<= 0` to disable.
 
 **LISTEN/NOTIFY (zero idle polling):**
 

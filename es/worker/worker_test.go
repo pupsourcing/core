@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pupsourcing/core/es"
 	"github.com/pupsourcing/core/es/consumer"
 	"github.com/pupsourcing/core/es/store"
 )
@@ -45,6 +46,26 @@ func (m *mockWakeupSource) Subscribe() (signals <-chan struct{}, unsubscribe fun
 	return make(chan struct{}, 1), func() {}
 }
 
+type noopConsumer struct {
+	name string
+}
+
+func (c *noopConsumer) Name() string {
+	return c.name
+}
+
+//nolint:gocritic // hugeParam: Intentionally pass by value to match Consumer interface
+func (c *noopConsumer) Handle(_ context.Context, _ *sql.Tx, _ es.PersistedEvent) error {
+	return nil
+}
+
+type blockingProcessor struct{}
+
+func (p *blockingProcessor) Run(ctx context.Context, _ consumer.Consumer) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
 func TestDefaultConfig(t *testing.T) {
 	t.Parallel()
 
@@ -82,6 +103,10 @@ func TestDefaultConfig(t *testing.T) {
 		"MaxPollInterval": {
 			got:  cfg.MaxPollInterval,
 			want: 5 * time.Second,
+		},
+		"MaxPostBatchPause": {
+			got:  cfg.MaxPostBatchPause,
+			want: 100 * time.Millisecond,
 		},
 		"PollBackoffFactor": {
 			got:  cfg.PollBackoffFactor,
@@ -210,6 +235,15 @@ func TestOptions(t *testing.T) {
 				}
 			},
 		},
+		"WithMaxPostBatchPause": {
+			option: WithMaxPostBatchPause(250 * time.Millisecond),
+			checkFunc: func(t *testing.T, c *Config) {
+				t.Helper()
+				if c.MaxPostBatchPause != 250*time.Millisecond {
+					t.Errorf("MaxPostBatchPause: got %v, want 250ms", c.MaxPostBatchPause)
+				}
+			},
+		},
 		"WithPollBackoffFactor": {
 			option: WithPollBackoffFactor(1.5),
 			checkFunc: func(t *testing.T, c *Config) {
@@ -317,6 +351,7 @@ func TestOptionsCompose(t *testing.T) {
 		WithBatchSize(200),
 		WithPollInterval(50 * time.Millisecond),
 		WithMaxPollInterval(2 * time.Second),
+		WithMaxPostBatchPause(250 * time.Millisecond),
 		WithPollBackoffFactor(1.5),
 		WithWakeupJitter(10 * time.Millisecond),
 		WithDispatcher(false),
@@ -362,6 +397,10 @@ func TestOptionsCompose(t *testing.T) {
 		"MaxPollInterval": {
 			got:  cfg.MaxPollInterval,
 			want: 2 * time.Second,
+		},
+		"MaxPostBatchPause": {
+			got:  cfg.MaxPostBatchPause,
+			want: 250 * time.Millisecond,
 		},
 		"PollBackoffFactor": {
 			got:  cfg.PollBackoffFactor,
@@ -432,6 +471,37 @@ func TestRunNoConsumers(t *testing.T) {
 	expectedMsg := "at least one consumer"
 	if !containsString(err.Error(), expectedMsg) {
 		t.Errorf("error message should contain %q, got: %v", expectedMsg, err)
+	}
+}
+
+func TestRunPropagatesMaxPostBatchPause(t *testing.T) {
+	t.Parallel()
+
+	var capturedCfg *consumer.SegmentProcessorConfig
+	factory := func(cfg *consumer.SegmentProcessorConfig) consumer.ProcessorRunner {
+		cfgCopy := *cfg
+		capturedCfg = &cfgCopy
+		return &blockingProcessor{}
+	}
+
+	w := New(nil, nil, factory,
+		WithDispatcher(false),
+		WithMaxPostBatchPause(250*time.Millisecond),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	err := w.Run(ctx, &noopConsumer{name: "config-propagation-test"})
+	if err != context.DeadlineExceeded {
+		t.Fatalf("expected context deadline exceeded, got %v", err)
+	}
+
+	if capturedCfg == nil {
+		t.Fatal("expected segment processor config to be captured")
+	}
+	if capturedCfg.MaxPostBatchPause != 250*time.Millisecond {
+		t.Errorf("MaxPostBatchPause: got %v, want 250ms", capturedCfg.MaxPostBatchPause)
 	}
 }
 
@@ -514,6 +584,7 @@ func TestNew(t *testing.T) {
 				WithBatchSize(150),
 				WithPollInterval(75 * time.Millisecond),
 				WithMaxPollInterval(3 * time.Second),
+				WithMaxPostBatchPause(300 * time.Millisecond),
 				WithPollBackoffFactor(1.8),
 				WithWakeupJitter(15 * time.Millisecond),
 				WithDispatcher(false),
@@ -551,6 +622,9 @@ func TestNew(t *testing.T) {
 				}
 				if w.config.MaxPollInterval != 3*time.Second {
 					t.Errorf("MaxPollInterval: got %v, want 3s", w.config.MaxPollInterval)
+				}
+				if w.config.MaxPostBatchPause != 300*time.Millisecond {
+					t.Errorf("MaxPostBatchPause: got %v, want 300ms", w.config.MaxPostBatchPause)
 				}
 				if w.config.PollBackoffFactor != 1.8 {
 					t.Errorf("PollBackoffFactor: got %v, want 1.8", w.config.PollBackoffFactor)

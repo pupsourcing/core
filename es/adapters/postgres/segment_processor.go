@@ -27,6 +27,8 @@ var (
 	ErrConsumerStopped = errors.New("consumer stopped")
 )
 
+const minAdaptivePostBatchPause = 5 * time.Millisecond
+
 type SegmentProcessor struct {
 	db      *sql.DB
 	store   *Store
@@ -548,6 +550,8 @@ func (p *SegmentProcessor) deregisterWorker(ctx context.Context, consumerName st
 }
 
 // processSegment is the main event processing loop for a single segment.
+//
+//nolint:gocyclo // Intentional control flow: idle wait, batch processing, and adaptive throttling coordination
 func (p *SegmentProcessor) processSegment(ctx context.Context, cons consumer.Consumer, segmentID int, aggregateTypeFilter, boundedContextFilter map[string]bool) error {
 	var wakeupCh <-chan struct{}
 	unsubscribe := func() {}
@@ -557,6 +561,7 @@ func (p *SegmentProcessor) processSegment(ctx context.Context, cons consumer.Con
 	defer unsubscribe()
 
 	idleDelay := p.config.PollInterval
+	postBatchPause := time.Duration(0)
 
 	for {
 		select {
@@ -572,9 +577,11 @@ func (p *SegmentProcessor) processSegment(ctx context.Context, cons consumer.Con
 		}
 
 		// Process batch
-		err := p.processSegmentBatch(ctx, cons, segmentID, aggregateTypeFilter, boundedContextFilter)
+		batchSize, err := p.processSegmentBatch(ctx, cons, segmentID, aggregateTypeFilter, boundedContextFilter)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) || errors.Is(err, errNoEventsInBatch) {
+				postBatchPause = 0
+
 				// Handle idle cycle
 				if p.config.RunMode == consumer.RunModeOneOff {
 					if p.config.Logger != nil {
@@ -618,14 +625,19 @@ func (p *SegmentProcessor) processSegment(ctx context.Context, cons consumer.Con
 		if idleDelay != p.config.PollInterval {
 			idleDelay = p.config.PollInterval
 		}
+
+		postBatchPause = p.nextAdaptivePostBatchPause(postBatchPause, batchSize)
+		if waitErr := p.waitPostBatchPause(ctx, cons.Name(), segmentID, postBatchPause); waitErr != nil {
+			return waitErr
+		}
 	}
 }
 
 // processSegmentBatch processes one batch of events for a segment.
-func (p *SegmentProcessor) processSegmentBatch(ctx context.Context, cons consumer.Consumer, segmentID int, aggregateTypeFilter, boundedContextFilter map[string]bool) error {
+func (p *SegmentProcessor) processSegmentBatch(ctx context.Context, cons consumer.Consumer, segmentID int, aggregateTypeFilter, boundedContextFilter map[string]bool) (int, error) {
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() {
 		//nolint:errcheck // Rollback error ignored: expected to fail if commit succeeds
@@ -635,17 +647,17 @@ func (p *SegmentProcessor) processSegmentBatch(ctx context.Context, cons consume
 	// Get segment checkpoint
 	checkpoint, err := p.store.GetSegmentCheckpoint(ctx, tx, cons.Name(), segmentID)
 	if err != nil {
-		return fmt.Errorf("failed to get segment checkpoint: %w", err)
+		return 0, fmt.Errorf("failed to get segment checkpoint: %w", err)
 	}
 
 	// Read events
 	events, err := p.store.ReadEvents(ctx, tx, checkpoint, p.config.BatchSize)
 	if err != nil {
-		return fmt.Errorf("failed to read events: %w", err)
+		return 0, fmt.Errorf("failed to read events: %w", err)
 	}
 
 	if len(events) == 0 {
-		return errNoEventsInBatch
+		return 0, errNoEventsInBatch
 	}
 
 	// Process events with filtering
@@ -675,7 +687,7 @@ func (p *SegmentProcessor) processSegmentBatch(ctx context.Context, cons consume
 					"event_type", event.EventType,
 					"error", handlerErr)
 			}
-			return fmt.Errorf("consumer handler error at position %d: %w", event.GlobalPosition, handlerErr)
+			return 0, fmt.Errorf("consumer handler error at position %d: %w", event.GlobalPosition, handlerErr)
 		}
 
 		lastPosition = event.GlobalPosition
@@ -686,12 +698,12 @@ func (p *SegmentProcessor) processSegmentBatch(ctx context.Context, cons consume
 	if lastPosition > 0 {
 		err = p.store.UpdateSegmentCheckpoint(ctx, tx, cons.Name(), segmentID, lastPosition)
 		if err != nil {
-			return fmt.Errorf("failed to update segment checkpoint: %w", err)
+			return 0, fmt.Errorf("failed to update segment checkpoint: %w", err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return err
+		return 0, err
 	}
 
 	if p.config.Logger != nil {
@@ -712,7 +724,7 @@ func (p *SegmentProcessor) processSegmentBatch(ctx context.Context, cons consume
 		}
 	}
 
-	return nil
+	return len(events), nil
 }
 
 // shouldProcessEvent checks if this segment should process the event based on partition strategy and filters.
@@ -800,6 +812,68 @@ func (p *SegmentProcessor) applyWakeupJitter(ctx context.Context, consumerName s
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-time.After(jitter):
+		return nil
+	}
+}
+
+// nextAdaptivePostBatchPause calculates the next post-batch pause based on observed batch size.
+func (p *SegmentProcessor) nextAdaptivePostBatchPause(current time.Duration, batchSize int) time.Duration {
+	maxPause := p.config.MaxPostBatchPause
+	if p.config.RunMode == consumer.RunModeOneOff || maxPause <= 0 || batchSize <= 0 {
+		return 0
+	}
+
+	if current > maxPause {
+		current = maxPause
+	}
+
+	fullBatch := p.config.BatchSize > 0 && batchSize >= p.config.BatchSize
+	if fullBatch {
+		if current <= 0 {
+			if maxPause < minAdaptivePostBatchPause {
+				return maxPause
+			}
+			return minAdaptivePostBatchPause
+		}
+
+		next := current * 2
+		if next > maxPause {
+			return maxPause
+		}
+		return next
+	}
+
+	if current <= 0 {
+		return 0
+	}
+
+	next := current / 2
+	if next < minAdaptivePostBatchPause {
+		return 0
+	}
+	return next
+}
+
+// waitPostBatchPause blocks between successful batches to reduce sustained DB pressure.
+func (p *SegmentProcessor) waitPostBatchPause(ctx context.Context, consumerName string, segmentID int, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+
+	if p.config.Logger != nil {
+		p.config.Logger.Debug(ctx, "segment adaptive post-batch pause",
+			"consumer", consumerName,
+			"segment_id", segmentID,
+			"pause", delay)
+	}
+
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
 		return nil
 	}
 }
