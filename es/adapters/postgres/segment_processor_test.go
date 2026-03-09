@@ -513,3 +513,57 @@ func TestExecuteBatchWithRetry(t *testing.T) {
 		}
 	})
 }
+
+func TestHealthAuditInterval(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		config consumer.SegmentProcessorConfig
+		want   time.Duration
+	}{
+		{
+			name: "auto derives from stale threshold",
+			config: consumer.SegmentProcessorConfig{
+				StaleThreshold: 30 * time.Second,
+			},
+			want: 15 * time.Second,
+		},
+		{
+			name: "custom interval overrides auto",
+			config: consumer.SegmentProcessorConfig{
+				StaleThreshold:      30 * time.Second,
+				HealthAuditInterval: 7 * time.Second,
+			},
+			want: 7 * time.Second,
+		},
+		{
+			name: "negative disables audit",
+			config: consumer.SegmentProcessorConfig{
+				StaleThreshold:      30 * time.Second,
+				HealthAuditInterval: -1,
+			},
+			want: 0,
+		},
+		{
+			name: "zero stale threshold disables auto audit",
+			config: consumer.SegmentProcessorConfig{
+				StaleThreshold: 0,
+			},
+			want: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			proc := &SegmentProcessor{config: &tt.config}
+			got := proc.healthAuditInterval()
+			if got != tt.want {
+				t.Errorf("healthAuditInterval() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

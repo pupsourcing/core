@@ -68,6 +68,13 @@ type SegmentProcessorConfig struct {
 	// Default: 0 (disabled)
 	TransientErrorRetryMaxAttempts int
 
+	// HealthAuditInterval controls how often the processor audits its worker
+	// registry entry and restores it if it has gone missing or stale while the
+	// process is still running. Set to 0 to derive the interval from
+	// StaleThreshold/2. Set to < 0 to disable the audit loop.
+	// Default: 0 (auto = StaleThreshold/2)
+	HealthAuditInterval time.Duration
+
 	// WakeupJitter is the random delay applied after receiving a wake signal.
 	// Default: 25ms
 	WakeupJitter time.Duration
@@ -108,6 +115,7 @@ func DefaultSegmentProcessorConfig() *SegmentProcessorConfig {
 		MaxPollInterval:                5 * time.Second,
 		MaxPostBatchPause:              100 * time.Millisecond,
 		TransientErrorRetryMaxAttempts: 0,
+		HealthAuditInterval:            0,
 		PollBackoffFactor:              2.0,
 		WakeupJitter:                   25 * time.Millisecond,
 		WakeupSource:                   nil,

@@ -112,6 +112,10 @@ func TestDefaultConfig(t *testing.T) {
 			got:  cfg.TransientErrorRetryMaxAttempts,
 			want: 0,
 		},
+		"HealthAuditInterval": {
+			got:  cfg.HealthAuditInterval,
+			want: time.Duration(0),
+		},
 		"PollBackoffFactor": {
 			got:  cfg.PollBackoffFactor,
 			want: 2.0,
@@ -257,6 +261,15 @@ func TestOptions(t *testing.T) {
 				}
 			},
 		},
+		"WithHealthAuditInterval": {
+			option: WithHealthAuditInterval(7 * time.Second),
+			checkFunc: func(t *testing.T, c *Config) {
+				t.Helper()
+				if c.HealthAuditInterval != 7*time.Second {
+					t.Errorf("HealthAuditInterval: got %v, want 7s", c.HealthAuditInterval)
+				}
+			},
+		},
 		"WithPollBackoffFactor": {
 			option: WithPollBackoffFactor(1.5),
 			checkFunc: func(t *testing.T, c *Config) {
@@ -366,6 +379,7 @@ func TestOptionsCompose(t *testing.T) {
 		WithMaxPollInterval(2 * time.Second),
 		WithMaxPostBatchPause(250 * time.Millisecond),
 		WithTransientErrorRetry(3),
+		WithHealthAuditInterval(7 * time.Second),
 		WithPollBackoffFactor(1.5),
 		WithWakeupJitter(10 * time.Millisecond),
 		WithDispatcher(false),
@@ -419,6 +433,10 @@ func TestOptionsCompose(t *testing.T) {
 		"TransientErrorRetryMaxAttempts": {
 			got:  cfg.TransientErrorRetryMaxAttempts,
 			want: 3,
+		},
+		"HealthAuditInterval": {
+			got:  cfg.HealthAuditInterval,
+			want: 7 * time.Second,
 		},
 		"PollBackoffFactor": {
 			got:  cfg.PollBackoffFactor,
@@ -554,6 +572,37 @@ func TestRunPropagatesTransientErrorRetry(t *testing.T) {
 	}
 }
 
+func TestRunPropagatesHealthAuditInterval(t *testing.T) {
+	t.Parallel()
+
+	var capturedCfg *consumer.SegmentProcessorConfig
+	factory := func(cfg *consumer.SegmentProcessorConfig) consumer.ProcessorRunner {
+		cfgCopy := *cfg
+		capturedCfg = &cfgCopy
+		return &blockingProcessor{}
+	}
+
+	w := New(nil, nil, factory,
+		WithDispatcher(false),
+		WithHealthAuditInterval(9*time.Second),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	err := w.Run(ctx, &noopConsumer{name: "health-audit-config-propagation-test"})
+	if err != context.DeadlineExceeded {
+		t.Fatalf("expected context deadline exceeded, got %v", err)
+	}
+
+	if capturedCfg == nil {
+		t.Fatal("expected segment processor config to be captured")
+	}
+	if capturedCfg.HealthAuditInterval != 9*time.Second {
+		t.Errorf("HealthAuditInterval: got %v, want 9s", capturedCfg.HealthAuditInterval)
+	}
+}
+
 func TestNew(t *testing.T) {
 	t.Parallel()
 
@@ -635,6 +684,7 @@ func TestNew(t *testing.T) {
 				WithMaxPollInterval(3 * time.Second),
 				WithMaxPostBatchPause(300 * time.Millisecond),
 				WithTransientErrorRetry(5),
+				WithHealthAuditInterval(12 * time.Second),
 				WithPollBackoffFactor(1.8),
 				WithWakeupJitter(15 * time.Millisecond),
 				WithDispatcher(false),
@@ -678,6 +728,9 @@ func TestNew(t *testing.T) {
 				}
 				if w.config.TransientErrorRetryMaxAttempts != 5 {
 					t.Errorf("TransientErrorRetryMaxAttempts: got %d, want 5", w.config.TransientErrorRetryMaxAttempts)
+				}
+				if w.config.HealthAuditInterval != 12*time.Second {
+					t.Errorf("HealthAuditInterval: got %v, want 12s", w.config.HealthAuditInterval)
 				}
 				if w.config.PollBackoffFactor != 1.8 {
 					t.Errorf("PollBackoffFactor: got %v, want 1.8", w.config.PollBackoffFactor)

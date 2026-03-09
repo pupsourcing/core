@@ -736,6 +736,7 @@ func TestWorkerReRegistersMissingRegistryEntry(t *testing.T) {
 		worker.WithTotalSegments(1),
 		worker.WithRebalanceInterval(200*time.Millisecond),
 		worker.WithHeartbeatInterval(10*time.Second),
+		worker.WithHealthAuditInterval(200*time.Millisecond),
 		worker.WithStaleThreshold(30*time.Second),
 		worker.WithPollInterval(50*time.Millisecond),
 		worker.WithMaxPollInterval(200*time.Millisecond),
@@ -785,7 +786,7 @@ func TestWorkerReRegistersMissingRegistryEntry(t *testing.T) {
 		t.Fatalf("failed to delete worker registry row: %v", err)
 	}
 
-	// Rebalance should re-register the worker without waiting for the heartbeat interval.
+	// Health audit should re-register the worker without waiting for the heartbeat interval.
 	{
 		deadline := time.After(3 * time.Second)
 		ticker := time.NewTicker(100 * time.Millisecond)

@@ -413,6 +413,31 @@ func (s *Store) DeregisterWorker(ctx context.Context, tx es.DBTX, consumerName, 
 	return nil
 }
 
+func (s *Store) isWorkerActive(
+	ctx context.Context,
+	tx es.DBTX,
+	consumerName, workerID string,
+	staleThreshold time.Duration,
+) (bool, error) {
+	query := fmt.Sprintf(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM %s
+			WHERE consumer_name = $1
+			  AND worker_id = $2
+			  AND last_heartbeat >= NOW() - make_interval(secs => $3)
+		)
+	`, s.config.WorkerRegistryTable)
+
+	var active bool
+	err := tx.QueryRowContext(ctx, query, consumerName, workerID, staleThreshold.Seconds()).Scan(&active)
+	if err != nil {
+		return false, fmt.Errorf("failed to check worker status: %w", err)
+	}
+
+	return active, nil
+}
+
 // CountActiveWorkers implements store.SegmentStore.
 func (s *Store) CountActiveWorkers(
 	ctx context.Context, tx es.DBTX, consumerName string, staleThreshold time.Duration,
