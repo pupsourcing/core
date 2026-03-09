@@ -400,6 +400,145 @@ func TestReadEvents_Pagination(t *testing.T) {
 	}
 }
 
+func TestReadEventsWithScope(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	setupTestTables(t, db)
+
+	ctx := context.Background()
+	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
+
+	events := []es.Event{
+		{
+			BoundedContext: "Billing",
+			AggregateType:  "User",
+			AggregateID:    uuid.New().String(),
+			EventID:        uuid.New(),
+			EventType:      "UserCreated",
+			EventVersion:   1,
+			Payload:        []byte(`{}`),
+			Metadata:       []byte(`{}`),
+			CreatedAt:      time.Now(),
+		},
+		{
+			BoundedContext: "Billing",
+			AggregateType:  "Order",
+			AggregateID:    uuid.New().String(),
+			EventID:        uuid.New(),
+			EventType:      "OrderPlaced",
+			EventVersion:   1,
+			Payload:        []byte(`{}`),
+			Metadata:       []byte(`{}`),
+			CreatedAt:      time.Now(),
+		},
+		{
+			BoundedContext: "Identity",
+			AggregateType:  "User",
+			AggregateID:    uuid.New().String(),
+			EventID:        uuid.New(),
+			EventType:      "UserUpdated",
+			EventVersion:   1,
+			Payload:        []byte(`{}`),
+			Metadata:       []byte(`{}`),
+			CreatedAt:      time.Now(),
+		},
+		{
+			BoundedContext: "Catalog",
+			AggregateType:  "Product",
+			AggregateID:    uuid.New().String(),
+			EventID:        uuid.New(),
+			EventType:      "ProductAdded",
+			EventVersion:   1,
+			Payload:        []byte(`{}`),
+			Metadata:       []byte(`{}`),
+			CreatedAt:      time.Now(),
+		},
+	}
+
+	for _, event := range events {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatalf("Failed to begin tx: %v", err)
+		}
+
+		if _, err := pgStore.Append(ctx, tx, es.NoStream(), []es.Event{event}); err != nil {
+			t.Fatalf("Failed to append event: %v", err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("Failed to commit append: %v", err)
+		}
+	}
+
+	tests := []struct {
+		name  string
+		scope postgres.ReadEventsScope
+		want  []string
+	}{
+		{
+			name: "bounded context only",
+			scope: postgres.ReadEventsScope{
+				BoundedContexts: []string{"Billing"},
+			},
+			want: []string{"Billing/User", "Billing/Order"},
+		},
+		{
+			name: "aggregate type only",
+			scope: postgres.ReadEventsScope{
+				AggregateTypes: []string{"User"},
+			},
+			want: []string{"Billing/User", "Identity/User"},
+		},
+		{
+			name: "both filters",
+			scope: postgres.ReadEventsScope{
+				BoundedContexts: []string{"Billing"},
+				AggregateTypes:  []string{"User"},
+			},
+			want: []string{"Billing/User"},
+		},
+		{
+			name: "multiple filters",
+			scope: postgres.ReadEventsScope{
+				BoundedContexts: []string{"Billing", "Identity"},
+				AggregateTypes:  []string{"User", "Order"},
+			},
+			want: []string{"Billing/User", "Billing/Order", "Identity/User"},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			tx, err := db.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatalf("Failed to begin read tx: %v", err)
+			}
+			defer tx.Rollback()
+
+			readEvents, err := pgStore.ReadEventsWithScope(ctx, tx, 0, 10, tt.scope)
+			if err != nil {
+				t.Fatalf("Failed to read scoped events: %v", err)
+			}
+
+			if len(readEvents) != len(tt.want) {
+				t.Fatalf("Expected %d events, got %d", len(tt.want), len(readEvents))
+			}
+
+			got := make([]string, 0, len(readEvents))
+			for _, event := range readEvents {
+				got = append(got, event.BoundedContext+"/"+event.AggregateType)
+			}
+
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Fatalf("event %d = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestAggregateVersionTracking(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()

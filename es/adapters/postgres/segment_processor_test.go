@@ -1,9 +1,14 @@
 package postgres
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/lib/pq"
 
 	"github.com/pupsourcing/core/es/consumer"
 )
@@ -350,6 +355,214 @@ func TestNextAdaptivePostBatchPause_DisabledOrOneOff(t *testing.T) {
 			got := proc.nextAdaptivePostBatchPause(50*time.Millisecond, 10)
 			if got != 0 {
 				t.Errorf("nextAdaptivePostBatchPause() = %v, want 0", got)
+			}
+		})
+	}
+}
+
+func TestIsRetryablePostgresTransactionError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "deadlock detected is retryable",
+			err:  &pq.Error{Code: pq.ErrorCode(pgSQLStateDeadlockDetected)},
+			want: true,
+		},
+		{
+			name: "serialization failure is retryable",
+			err:  &pq.Error{Code: pq.ErrorCode(pgSQLStateSerializationFailure)},
+			want: true,
+		},
+		{
+			name: "wrapped deadlock is retryable",
+			err:  fmt.Errorf("wrapped: %w", &pq.Error{Code: pq.ErrorCode(pgSQLStateDeadlockDetected)}),
+			want: true,
+		},
+		{
+			name: "unique violation is not retryable",
+			err:  &pq.Error{Code: pq.ErrorCode("23505")},
+			want: false,
+		},
+		{
+			name: "generic error is not retryable",
+			err:  errors.New("boom"),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := isRetryablePostgresTransactionError(tt.err)
+			if got != tt.want {
+				t.Errorf("isRetryablePostgresTransactionError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNextTransientRetryDelay(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		retriesUsed int
+		want        time.Duration
+	}{
+		{retriesUsed: 0, want: 25 * time.Millisecond},
+		{retriesUsed: 1, want: 50 * time.Millisecond},
+		{retriesUsed: 2, want: 100 * time.Millisecond},
+		{retriesUsed: 3, want: 200 * time.Millisecond},
+		{retriesUsed: 4, want: 400 * time.Millisecond},
+		{retriesUsed: 5, want: 500 * time.Millisecond},
+		{retriesUsed: 8, want: 500 * time.Millisecond},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(fmt.Sprintf("retries-%d", tt.retriesUsed), func(t *testing.T) {
+			t.Parallel()
+
+			got := nextTransientRetryDelay(tt.retriesUsed)
+			if got != tt.want {
+				t.Errorf("nextTransientRetryDelay() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExecuteBatchWithRetry(t *testing.T) {
+	t.Parallel()
+
+	t.Run("retries retryable errors until success", func(t *testing.T) {
+		t.Parallel()
+
+		proc := &SegmentProcessor{
+			config: &consumer.SegmentProcessorConfig{
+				TransientErrorRetryMaxAttempts: 2,
+			},
+		}
+
+		attempts := 0
+		got, err := proc.executeBatchWithRetry(context.Background(), "test-consumer", 0, func() (int, error) {
+			attempts++
+			if attempts < 3 {
+				return 0, fmt.Errorf("wrapped: %w", &pq.Error{Code: pq.ErrorCode(pgSQLStateDeadlockDetected)})
+			}
+			return 7, nil
+		})
+		if err != nil {
+			t.Fatalf("expected retry to succeed, got error %v", err)
+		}
+		if got != 7 {
+			t.Fatalf("expected batch size 7, got %d", got)
+		}
+		if attempts != 3 {
+			t.Fatalf("expected 3 attempts, got %d", attempts)
+		}
+	})
+
+	t.Run("stops after max retries", func(t *testing.T) {
+		t.Parallel()
+
+		proc := &SegmentProcessor{
+			config: &consumer.SegmentProcessorConfig{
+				TransientErrorRetryMaxAttempts: 1,
+			},
+		}
+
+		retryErr := fmt.Errorf("wrapped: %w", &pq.Error{Code: pq.ErrorCode(pgSQLStateDeadlockDetected)})
+		attempts := 0
+		_, err := proc.executeBatchWithRetry(context.Background(), "test-consumer", 0, func() (int, error) {
+			attempts++
+			return 0, retryErr
+		})
+		if !errors.Is(err, retryErr) {
+			t.Fatalf("expected original retryable error, got %v", err)
+		}
+		if attempts != 2 {
+			t.Fatalf("expected 2 attempts, got %d", attempts)
+		}
+	})
+
+	t.Run("does not retry non retryable errors", func(t *testing.T) {
+		t.Parallel()
+
+		proc := &SegmentProcessor{
+			config: &consumer.SegmentProcessorConfig{
+				TransientErrorRetryMaxAttempts: 3,
+			},
+		}
+
+		nonRetryErr := errors.New("boom")
+		attempts := 0
+		_, err := proc.executeBatchWithRetry(context.Background(), "test-consumer", 0, func() (int, error) {
+			attempts++
+			return 0, nonRetryErr
+		})
+		if !errors.Is(err, nonRetryErr) {
+			t.Fatalf("expected original non-retryable error, got %v", err)
+		}
+		if attempts != 1 {
+			t.Fatalf("expected 1 attempt, got %d", attempts)
+		}
+	})
+}
+
+func TestHealthAuditInterval(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		config consumer.SegmentProcessorConfig
+		want   time.Duration
+	}{
+		{
+			name: "auto derives from stale threshold",
+			config: consumer.SegmentProcessorConfig{
+				StaleThreshold: 30 * time.Second,
+			},
+			want: 15 * time.Second,
+		},
+		{
+			name: "custom interval overrides auto",
+			config: consumer.SegmentProcessorConfig{
+				StaleThreshold:      30 * time.Second,
+				HealthAuditInterval: 7 * time.Second,
+			},
+			want: 7 * time.Second,
+		},
+		{
+			name: "negative disables audit",
+			config: consumer.SegmentProcessorConfig{
+				StaleThreshold:      30 * time.Second,
+				HealthAuditInterval: -1,
+			},
+			want: 0,
+		},
+		{
+			name: "zero stale threshold disables auto audit",
+			config: consumer.SegmentProcessorConfig{
+				StaleThreshold: 0,
+			},
+			want: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			proc := &SegmentProcessor{config: &tt.config}
+			got := proc.healthAuditInterval()
+			if got != tt.want {
+				t.Errorf("healthAuditInterval() = %v, want %v", got, tt.want)
 			}
 		})
 	}
