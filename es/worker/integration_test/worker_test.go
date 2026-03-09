@@ -10,8 +10,10 @@ package integration_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -718,7 +720,7 @@ func TestWorkerContextCancellation(t *testing.T) {
 	}
 }
 
-func TestWorkerReclaimsDetachedSegments(t *testing.T) {
+func TestWorkerReRegistersMissingRegistryEntry(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -727,14 +729,14 @@ func TestWorkerReclaimsDetachedSegments(t *testing.T) {
 	ctx := context.Background()
 	store := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	consumerName := "test-worker-reclaim-detached"
+	consumerName := "test-worker-reregister"
 	cons := newCountingConsumer(consumerName)
 
 	w := postgres.NewWorker(db, store,
-		worker.WithTotalSegments(4),
+		worker.WithTotalSegments(1),
 		worker.WithRebalanceInterval(200*time.Millisecond),
-		worker.WithHeartbeatInterval(200*time.Millisecond),
-		worker.WithStaleThreshold(5*time.Second),
+		worker.WithHeartbeatInterval(10*time.Second),
+		worker.WithStaleThreshold(30*time.Second),
 		worker.WithPollInterval(50*time.Millisecond),
 		worker.WithMaxPollInterval(200*time.Millisecond),
 	)
@@ -747,7 +749,7 @@ func TestWorkerReclaimsDetachedSegments(t *testing.T) {
 		errCh <- w.Run(workerCtx, cons)
 	}()
 
-	// Wait for initial segment claims and capture owner ID.
+	// Wait for the initial claim and capture owner ID.
 	var ownerID string
 	{
 		deadline := time.After(6 * time.Second)
@@ -759,53 +761,33 @@ func TestWorkerReclaimsDetachedSegments(t *testing.T) {
 			select {
 			case <-deadline:
 				cancel()
-				t.Fatal("timeout waiting for worker to claim all segments")
+				t.Fatal("timeout waiting for worker to claim initial segment")
 			case <-ticker.C:
 				segments, err := store.GetSegments(ctx, db, consumerName)
-				if err != nil || len(segments) != 4 {
+				if err != nil || len(segments) != 1 {
 					continue
 				}
-
-				allOwned := true
-				sameOwner := true
-				var candidate string
-				for i, seg := range segments {
-					if seg.OwnerID == nil {
-						allOwned = false
-						break
-					}
-					if i == 0 {
-						candidate = *seg.OwnerID
-						continue
-					}
-					if *seg.OwnerID != candidate {
-						sameOwner = false
-						break
-					}
-				}
-
-				if allOwned && sameOwner && candidate != "" {
-					ownerID = candidate
+				if segments[0].OwnerID != nil && *segments[0].OwnerID != "" {
+					ownerID = *segments[0].OwnerID
 					break initialClaims
 				}
 			}
 		}
 	}
-	// Simulate detached ownership for two segments while worker goroutines keep running.
+
+	// Delete the worker registry row and rely on rebalance to restore it.
 	_, err := db.ExecContext(ctx, `
-		UPDATE consumer_segments
-		SET owner_id = NULL
-		WHERE consumer_name = $1
-		  AND segment_id IN (0, 1)
-	`, consumerName)
+		DELETE FROM consumer_workers
+		WHERE consumer_name = $1 AND worker_id = $2
+	`, consumerName, ownerID)
 	if err != nil {
 		cancel()
-		t.Fatalf("failed to detach segment ownership: %v", err)
+		t.Fatalf("failed to delete worker registry row: %v", err)
 	}
 
-	// Worker should reclaim the detached segments on the next rebalance cycle.
+	// Rebalance should re-register the worker without waiting for the heartbeat interval.
 	{
-		deadline := time.After(6 * time.Second)
+		deadline := time.After(3 * time.Second)
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -813,22 +795,23 @@ func TestWorkerReclaimsDetachedSegments(t *testing.T) {
 			select {
 			case <-deadline:
 				cancel()
-				t.Fatal("timeout waiting for detached segments to be reclaimed")
+				t.Fatal("timeout waiting for rebalance to restore worker registry row")
 			case <-ticker.C:
-				segments, err := store.GetSegments(ctx, db, consumerName)
-				if err != nil || len(segments) != 4 {
+				var workerCount int
+				if err := db.QueryRowContext(ctx, `
+					SELECT COUNT(*)
+					FROM consumer_workers
+					WHERE consumer_name = $1 AND worker_id = $2
+				`, consumerName, ownerID).Scan(&workerCount); err != nil {
 					continue
 				}
 
-				allReclaimed := true
-				for _, seg := range segments {
-					if seg.OwnerID == nil || *seg.OwnerID != ownerID {
-						allReclaimed = false
-						break
-					}
+				segments, err := store.GetSegments(ctx, db, consumerName)
+				if err != nil || len(segments) != 1 {
+					continue
 				}
 
-				if allReclaimed {
+				if workerCount == 1 && segments[0].OwnerID != nil && *segments[0].OwnerID == ownerID {
 					cancel()
 					runErr := <-errCh
 					if runErr != nil && runErr != context.Canceled {
@@ -838,6 +821,86 @@ func TestWorkerReclaimsDetachedSegments(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestWorkerStopsOnUnexpectedSegmentDetachment(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	setupTestTables(t, db)
+
+	ctx := context.Background()
+	store := postgres.NewStore(postgres.DefaultStoreConfig())
+
+	consumerName := "test-worker-detach-failfast"
+	cons := newCountingConsumer(consumerName)
+
+	w := postgres.NewWorker(db, store,
+		worker.WithTotalSegments(1),
+		worker.WithRebalanceInterval(10*time.Second),
+		worker.WithHeartbeatInterval(10*time.Second),
+		worker.WithStaleThreshold(30*time.Second),
+		worker.WithPollInterval(25*time.Millisecond),
+		worker.WithMaxPollInterval(100*time.Millisecond),
+	)
+
+	workerCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- w.Run(workerCtx, cons)
+	}()
+
+	// Wait for the segment to be claimed.
+	{
+		deadline := time.After(6 * time.Second)
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-deadline:
+				cancel()
+				t.Fatal("timeout waiting for worker to claim segment")
+			case <-ticker.C:
+				segments, err := store.GetSegments(ctx, db, consumerName)
+				if err != nil || len(segments) != 1 {
+					continue
+				}
+				if segments[0].OwnerID != nil {
+					goto detachSegment
+				}
+			}
+		}
+	}
+
+detachSegment:
+	_, err := db.ExecContext(ctx, `
+		UPDATE consumer_segments
+		SET owner_id = NULL
+		WHERE consumer_name = $1 AND segment_id = 0
+	`, consumerName)
+	if err != nil {
+		cancel()
+		t.Fatalf("failed to detach segment ownership: %v", err)
+	}
+
+	select {
+	case runErr := <-errCh:
+		if runErr == nil {
+			t.Fatal("expected worker to stop on unexpected segment detachment, got nil")
+		}
+		if !errors.Is(runErr, postgres.ErrConsumerStopped) {
+			t.Fatalf("expected ErrConsumerStopped, got %v", runErr)
+		}
+		if !strings.Contains(runErr.Error(), postgres.ErrSegmentNotOwned.Error()) {
+			t.Fatalf("expected ownership-loss error, got %v", runErr)
+		}
+	case <-time.After(3 * time.Second):
+		cancel()
+		t.Fatal("timeout waiting for worker to fail after unexpected segment detachment")
 	}
 }
 

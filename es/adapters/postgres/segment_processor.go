@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 
 	"github.com/pupsourcing/core/es"
 	"github.com/pupsourcing/core/es/consumer"
@@ -27,7 +28,13 @@ var (
 	ErrConsumerStopped = errors.New("consumer stopped")
 )
 
-const minAdaptivePostBatchPause = 5 * time.Millisecond
+const (
+	minAdaptivePostBatchPause       = 5 * time.Millisecond
+	initialTransientBatchRetryDelay = 25 * time.Millisecond
+	maxTransientBatchRetryDelay     = 500 * time.Millisecond
+	pgSQLStateDeadlockDetected      = "40P01"
+	pgSQLStateSerializationFailure  = "40001"
+)
 
 type SegmentProcessor struct {
 	db      *sql.DB
@@ -76,6 +83,7 @@ func (p *SegmentProcessor) Run(ctx context.Context, cons consumer.Consumer) erro
 	}
 
 	// Build filters once
+	readScope := buildReadEventsScope(cons)
 	aggregateTypeFilter := buildAggregateTypeFilter(cons)
 	boundedContextFilter := buildBoundedContextFilter(cons)
 
@@ -96,7 +104,9 @@ func (p *SegmentProcessor) Run(ctx context.Context, cons consumer.Consumer) erro
 
 	// Handle RunModeOneOff
 	if p.config.RunMode == consumer.RunModeOneOff {
-		err := p.runOneOff(ctx, cons, aggregateTypeFilter, boundedContextFilter, &workersMu, workers, workerErrCh)
+		err := p.runOneOff(
+			ctx, cons, readScope, aggregateTypeFilter, boundedContextFilter, &workersMu, workers, workerErrCh,
+		)
 		cancelHeartbeat()
 		<-heartbeatDone
 		p.deregisterWorker(ctx, cons.Name())
@@ -108,7 +118,9 @@ func (p *SegmentProcessor) Run(ctx context.Context, cons consumer.Consumer) erro
 	defer rebalanceTicker.Stop()
 
 	// Perform initial rebalance immediately
-	if err := p.rebalance(ctx, cons, aggregateTypeFilter, boundedContextFilter, &workersMu, workers, workerErrCh); err != nil {
+	if err := p.rebalance(
+		ctx, cons, readScope, aggregateTypeFilter, boundedContextFilter, &workersMu, workers, workerErrCh,
+	); err != nil {
 		cancelHeartbeat()
 		<-heartbeatDone
 		p.stopAllWorkers(&workersMu, workers)
@@ -145,7 +157,9 @@ func (p *SegmentProcessor) Run(ctx context.Context, cons consumer.Consumer) erro
 			return fmt.Errorf("%w: %v", ErrConsumerStopped, err)
 
 		case <-rebalanceTicker.C:
-			if err := p.rebalance(ctx, cons, aggregateTypeFilter, boundedContextFilter, &workersMu, workers, workerErrCh); err != nil {
+			if err := p.rebalance(
+				ctx, cons, readScope, aggregateTypeFilter, boundedContextFilter, &workersMu, workers, workerErrCh,
+			); err != nil {
 				cancelHeartbeat()
 				<-heartbeatDone
 				p.stopAllWorkers(&workersMu, workers)
@@ -158,7 +172,15 @@ func (p *SegmentProcessor) Run(ctx context.Context, cons consumer.Consumer) erro
 }
 
 // runOneOff handles RunModeOneOff by claiming all segments, processing to completion, and releasing.
-func (p *SegmentProcessor) runOneOff(ctx context.Context, cons consumer.Consumer, aggregateTypeFilter, boundedContextFilter map[string]bool, workersMu *sync.Mutex, workers map[int]*segmentWorker, workerErrCh chan error) error {
+func (p *SegmentProcessor) runOneOff(
+	ctx context.Context,
+	cons consumer.Consumer,
+	readScope *ReadEventsScope,
+	aggregateTypeFilter, boundedContextFilter map[string]bool,
+	workersMu *sync.Mutex,
+	workers map[int]*segmentWorker,
+	workerErrCh chan error,
+) error {
 	// Claim all available segments
 	for {
 		seg, err := p.store.ClaimSegment(ctx, p.db, cons.Name(), p.ownerID)
@@ -169,7 +191,9 @@ func (p *SegmentProcessor) runOneOff(ctx context.Context, cons consumer.Consumer
 			break
 		}
 
-		p.startSegmentWorker(ctx, cons, seg.SegmentID, aggregateTypeFilter, boundedContextFilter, workersMu, workers, workerErrCh)
+		p.startSegmentWorker(
+			ctx, cons, seg.SegmentID, readScope, aggregateTypeFilter, boundedContextFilter, workersMu, workers, workerErrCh,
+		)
 	}
 
 	if p.config.Logger != nil {
@@ -244,7 +268,21 @@ func (p *SegmentProcessor) heartbeatLoop(ctx context.Context, consumerName strin
 }
 
 // rebalance performs fair-share rebalancing: purge stale workers, reclaim stale segments, release excess, claim available.
-func (p *SegmentProcessor) rebalance(ctx context.Context, cons consumer.Consumer, aggregateTypeFilter, boundedContextFilter map[string]bool, workersMu *sync.Mutex, workers map[int]*segmentWorker, workerErrCh chan error) error {
+func (p *SegmentProcessor) rebalance(
+	ctx context.Context,
+	cons consumer.Consumer,
+	readScope *ReadEventsScope,
+	aggregateTypeFilter, boundedContextFilter map[string]bool,
+	workersMu *sync.Mutex,
+	workers map[int]*segmentWorker,
+	workerErrCh chan error,
+) error {
+	// Refresh our own registry entry before stale-worker maintenance so transient
+	// heartbeat misses do not cause us to orphan our own segments.
+	if err := p.store.RegisterWorker(ctx, p.db, cons.Name(), p.ownerID); err != nil {
+		return fmt.Errorf("failed to refresh worker registration: %w", err)
+	}
+
 	// Purge stale worker registry entries
 	if err := p.store.PurgeStaleWorkers(ctx, p.db, cons.Name(), p.config.StaleThreshold); err != nil {
 		return fmt.Errorf("failed to purge stale workers: %w", err)
@@ -269,7 +307,8 @@ func (p *SegmentProcessor) rebalance(ctx context.Context, cons consumer.Consumer
 
 	// Claim available segments (up to fair share)
 	return p.claimAvailable(
-		ctx, cons, currentOwned, fairShare, aggregateTypeFilter, boundedContextFilter, workersMu, workers, workerErrCh,
+		ctx, cons, currentOwned, fairShare, readScope, aggregateTypeFilter, boundedContextFilter, workersMu, workers,
+		workerErrCh,
 	)
 }
 
@@ -396,6 +435,7 @@ func (p *SegmentProcessor) claimAvailable(
 	cons consumer.Consumer,
 	currentOwned int,
 	fairShare int,
+	readScope *ReadEventsScope,
 	aggregateTypeFilter, boundedContextFilter map[string]bool,
 	workersMu *sync.Mutex,
 	workers map[int]*segmentWorker,
@@ -411,7 +451,9 @@ func (p *SegmentProcessor) claimAvailable(
 			break
 		}
 
-		p.startSegmentWorker(ctx, cons, seg.SegmentID, aggregateTypeFilter, boundedContextFilter, workersMu, workers, workerErrCh)
+		p.startSegmentWorker(
+			ctx, cons, seg.SegmentID, readScope, aggregateTypeFilter, boundedContextFilter, workersMu, workers, workerErrCh,
+		)
 		ownedCount++
 	}
 
@@ -419,7 +461,16 @@ func (p *SegmentProcessor) claimAvailable(
 }
 
 // startSegmentWorker starts a processing goroutine for a segment.
-func (p *SegmentProcessor) startSegmentWorker(ctx context.Context, cons consumer.Consumer, segmentID int, aggregateTypeFilter, boundedContextFilter map[string]bool, workersMu *sync.Mutex, workers map[int]*segmentWorker, workerErrCh chan error) {
+func (p *SegmentProcessor) startSegmentWorker(
+	ctx context.Context,
+	cons consumer.Consumer,
+	segmentID int,
+	readScope *ReadEventsScope,
+	aggregateTypeFilter, boundedContextFilter map[string]bool,
+	workersMu *sync.Mutex,
+	workers map[int]*segmentWorker,
+	workerErrCh chan error,
+) {
 	workersMu.Lock()
 	defer workersMu.Unlock()
 
@@ -447,7 +498,7 @@ func (p *SegmentProcessor) startSegmentWorker(ctx context.Context, cons consumer
 	}
 
 	go func() {
-		err := p.processSegment(workerCtx, cons, segmentID, aggregateTypeFilter, boundedContextFilter)
+		err := p.processSegment(workerCtx, cons, segmentID, readScope, aggregateTypeFilter, boundedContextFilter)
 		done <- err
 		close(done)
 
@@ -552,7 +603,13 @@ func (p *SegmentProcessor) deregisterWorker(ctx context.Context, consumerName st
 // processSegment is the main event processing loop for a single segment.
 //
 //nolint:gocyclo // Intentional control flow: idle wait, batch processing, and adaptive throttling coordination
-func (p *SegmentProcessor) processSegment(ctx context.Context, cons consumer.Consumer, segmentID int, aggregateTypeFilter, boundedContextFilter map[string]bool) error {
+func (p *SegmentProcessor) processSegment(
+	ctx context.Context,
+	cons consumer.Consumer,
+	segmentID int,
+	readScope *ReadEventsScope,
+	aggregateTypeFilter, boundedContextFilter map[string]bool,
+) error {
 	var wakeupCh <-chan struct{}
 	unsubscribe := func() {}
 	if p.config.WakeupSource != nil {
@@ -577,7 +634,9 @@ func (p *SegmentProcessor) processSegment(ctx context.Context, cons consumer.Con
 		}
 
 		// Process batch
-		batchSize, err := p.processSegmentBatch(ctx, cons, segmentID, aggregateTypeFilter, boundedContextFilter)
+		batchSize, err := p.executeBatchWithRetry(ctx, cons.Name(), segmentID, func() (int, error) {
+			return p.processSegmentBatch(ctx, cons, segmentID, readScope, aggregateTypeFilter, boundedContextFilter)
+		})
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) || errors.Is(err, errNoEventsInBatch) {
 				postBatchPause = 0
@@ -633,8 +692,48 @@ func (p *SegmentProcessor) processSegment(ctx context.Context, cons consumer.Con
 	}
 }
 
+func (p *SegmentProcessor) executeBatchWithRetry(ctx context.Context, consumerName string, segmentID int, run func() (int, error)) (int, error) {
+	retriesUsed := 0
+
+	for {
+		batchSize, err := run()
+		if err == nil {
+			return batchSize, nil
+		}
+
+		if !p.shouldRetryTransientBatchError(err, retriesUsed) {
+			return 0, err
+		}
+
+		delay := nextTransientRetryDelay(retriesUsed)
+		if p.config.Logger != nil {
+			p.config.Logger.Info(ctx, "segment batch transient error, retrying",
+				"consumer", consumerName,
+				"segment_id", segmentID,
+				"retry_attempt", retriesUsed+1,
+				"max_retry_attempts", p.config.TransientErrorRetryMaxAttempts,
+				"retry_delay", delay,
+				"error", err)
+		}
+
+		if err := waitForRetryDelay(ctx, delay); err != nil {
+			return 0, err
+		}
+
+		retriesUsed++
+	}
+}
+
 // processSegmentBatch processes one batch of events for a segment.
-func (p *SegmentProcessor) processSegmentBatch(ctx context.Context, cons consumer.Consumer, segmentID int, aggregateTypeFilter, boundedContextFilter map[string]bool) (int, error) {
+//
+//nolint:gocyclo // Intentional control flow: ownership checks, event filtering, handler errors, and checkpointing
+func (p *SegmentProcessor) processSegmentBatch(
+	ctx context.Context,
+	cons consumer.Consumer,
+	segmentID int,
+	readScope *ReadEventsScope,
+	aggregateTypeFilter, boundedContextFilter map[string]bool,
+) (int, error) {
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to begin transaction: %w", err)
@@ -645,13 +744,21 @@ func (p *SegmentProcessor) processSegmentBatch(ctx context.Context, cons consume
 	}()
 
 	// Get segment checkpoint
-	checkpoint, err := p.store.GetSegmentCheckpoint(ctx, tx, cons.Name(), segmentID)
+	checkpoint, err := p.store.getOwnedSegmentCheckpoint(ctx, tx, cons.Name(), segmentID, p.ownerID)
 	if err != nil {
+		if errors.Is(err, ErrSegmentNotOwned) {
+			return 0, err
+		}
 		return 0, fmt.Errorf("failed to get segment checkpoint: %w", err)
 	}
 
 	// Read events
-	events, err := p.store.ReadEvents(ctx, tx, checkpoint, p.config.BatchSize)
+	var events []es.PersistedEvent
+	if readScope != nil {
+		events, err = p.store.ReadEventsWithScope(ctx, tx, checkpoint, p.config.BatchSize, *readScope)
+	} else {
+		events, err = p.store.ReadEvents(ctx, tx, checkpoint, p.config.BatchSize)
+	}
 	if err != nil {
 		return 0, fmt.Errorf("failed to read events: %w", err)
 	}
@@ -696,8 +803,11 @@ func (p *SegmentProcessor) processSegmentBatch(ctx context.Context, cons consume
 
 	// Update segment checkpoint
 	if lastPosition > 0 {
-		err = p.store.UpdateSegmentCheckpoint(ctx, tx, cons.Name(), segmentID, lastPosition)
+		err = p.store.updateOwnedSegmentCheckpoint(ctx, tx, cons.Name(), segmentID, p.ownerID, lastPosition)
 		if err != nil {
+			if errors.Is(err, ErrSegmentNotOwned) {
+				return 0, err
+			}
 			return 0, fmt.Errorf("failed to update segment checkpoint: %w", err)
 		}
 	}
@@ -725,6 +835,58 @@ func (p *SegmentProcessor) processSegmentBatch(ctx context.Context, cons consume
 	}
 
 	return len(events), nil
+}
+
+func (p *SegmentProcessor) shouldRetryTransientBatchError(err error, retriesUsed int) bool {
+	if p.config == nil || p.config.TransientErrorRetryMaxAttempts <= 0 {
+		return false
+	}
+	if retriesUsed >= p.config.TransientErrorRetryMaxAttempts {
+		return false
+	}
+
+	return isRetryablePostgresTransactionError(err)
+}
+
+func isRetryablePostgresTransactionError(err error) bool {
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) {
+		return false
+	}
+
+	switch pqErr.SQLState() {
+	case pgSQLStateDeadlockDetected, pgSQLStateSerializationFailure:
+		return true
+	default:
+		return false
+	}
+}
+
+func nextTransientRetryDelay(retriesUsed int) time.Duration {
+	delay := initialTransientBatchRetryDelay
+	for i := 0; i < retriesUsed; i++ {
+		if delay >= maxTransientBatchRetryDelay/2 {
+			return maxTransientBatchRetryDelay
+		}
+		delay *= 2
+	}
+	return delay
+}
+
+func waitForRetryDelay(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // shouldProcessEvent checks if this segment should process the event based on partition strategy and filters.
@@ -907,6 +1069,27 @@ func (p *SegmentProcessor) nextPollDelay(current time.Duration) time.Duration {
 	}
 
 	return next
+}
+
+func buildReadEventsScope(proj consumer.Consumer) *ReadEventsScope {
+	scopedProj, ok := proj.(consumer.ScopedConsumer)
+	if !ok {
+		return nil
+	}
+
+	scope := ReadEventsScope{}
+	if types := scopedProj.AggregateTypes(); len(types) > 0 {
+		scope.AggregateTypes = append([]string(nil), types...)
+	}
+	if contexts := scopedProj.BoundedContexts(); len(contexts) > 0 {
+		scope.BoundedContexts = append([]string(nil), contexts...)
+	}
+
+	if len(scope.AggregateTypes) == 0 && len(scope.BoundedContexts) == 0 {
+		return nil
+	}
+
+	return &scope
 }
 
 // buildAggregateTypeFilter builds a filter map for scoped consumers with aggregate types.

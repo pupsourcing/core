@@ -60,6 +60,14 @@ type SegmentProcessorConfig struct {
 	// Default: 100ms
 	MaxPostBatchPause time.Duration
 
+	// TransientErrorRetryMaxAttempts retries a failed batch for retry-safe
+	// PostgreSQL transaction errors such as deadlocks (40P01) and serialization
+	// failures (40001). Retries are disabled when <= 0. Handlers should keep
+	// side effects inside the provided transaction or otherwise make them
+	// idempotent before enabling retries.
+	// Default: 0 (disabled)
+	TransientErrorRetryMaxAttempts int
+
 	// WakeupJitter is the random delay applied after receiving a wake signal.
 	// Default: 25ms
 	WakeupJitter time.Duration
@@ -93,15 +101,16 @@ func DefaultSegmentProcessorConfig() *SegmentProcessorConfig {
 		RebalanceInterval: 10 * time.Second,
 
 		// Processing
-		BatchSize:         100,
-		PartitionStrategy: HashPartitionStrategy{},
-		Logger:            nil,
-		PollInterval:      100 * time.Millisecond,
-		MaxPollInterval:   5 * time.Second,
-		MaxPostBatchPause: 100 * time.Millisecond,
-		PollBackoffFactor: 2.0,
-		WakeupJitter:      25 * time.Millisecond,
-		WakeupSource:      nil,
-		RunMode:           RunModeContinuous,
+		BatchSize:                      100,
+		PartitionStrategy:              HashPartitionStrategy{},
+		Logger:                         nil,
+		PollInterval:                   100 * time.Millisecond,
+		MaxPollInterval:                5 * time.Second,
+		MaxPostBatchPause:              100 * time.Millisecond,
+		TransientErrorRetryMaxAttempts: 0,
+		PollBackoffFactor:              2.0,
+		WakeupJitter:                   25 * time.Millisecond,
+		WakeupSource:                   nil,
+		RunMode:                        RunModeContinuous,
 	}
 }

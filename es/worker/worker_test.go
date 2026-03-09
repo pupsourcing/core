@@ -108,6 +108,10 @@ func TestDefaultConfig(t *testing.T) {
 			got:  cfg.MaxPostBatchPause,
 			want: 100 * time.Millisecond,
 		},
+		"TransientErrorRetryMaxAttempts": {
+			got:  cfg.TransientErrorRetryMaxAttempts,
+			want: 0,
+		},
 		"PollBackoffFactor": {
 			got:  cfg.PollBackoffFactor,
 			want: 2.0,
@@ -244,6 +248,15 @@ func TestOptions(t *testing.T) {
 				}
 			},
 		},
+		"WithTransientErrorRetry": {
+			option: WithTransientErrorRetry(3),
+			checkFunc: func(t *testing.T, c *Config) {
+				t.Helper()
+				if c.TransientErrorRetryMaxAttempts != 3 {
+					t.Errorf("TransientErrorRetryMaxAttempts: got %d, want 3", c.TransientErrorRetryMaxAttempts)
+				}
+			},
+		},
 		"WithPollBackoffFactor": {
 			option: WithPollBackoffFactor(1.5),
 			checkFunc: func(t *testing.T, c *Config) {
@@ -352,6 +365,7 @@ func TestOptionsCompose(t *testing.T) {
 		WithPollInterval(50 * time.Millisecond),
 		WithMaxPollInterval(2 * time.Second),
 		WithMaxPostBatchPause(250 * time.Millisecond),
+		WithTransientErrorRetry(3),
 		WithPollBackoffFactor(1.5),
 		WithWakeupJitter(10 * time.Millisecond),
 		WithDispatcher(false),
@@ -401,6 +415,10 @@ func TestOptionsCompose(t *testing.T) {
 		"MaxPostBatchPause": {
 			got:  cfg.MaxPostBatchPause,
 			want: 250 * time.Millisecond,
+		},
+		"TransientErrorRetryMaxAttempts": {
+			got:  cfg.TransientErrorRetryMaxAttempts,
+			want: 3,
 		},
 		"PollBackoffFactor": {
 			got:  cfg.PollBackoffFactor,
@@ -505,6 +523,37 @@ func TestRunPropagatesMaxPostBatchPause(t *testing.T) {
 	}
 }
 
+func TestRunPropagatesTransientErrorRetry(t *testing.T) {
+	t.Parallel()
+
+	var capturedCfg *consumer.SegmentProcessorConfig
+	factory := func(cfg *consumer.SegmentProcessorConfig) consumer.ProcessorRunner {
+		cfgCopy := *cfg
+		capturedCfg = &cfgCopy
+		return &blockingProcessor{}
+	}
+
+	w := New(nil, nil, factory,
+		WithDispatcher(false),
+		WithTransientErrorRetry(4),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	err := w.Run(ctx, &noopConsumer{name: "retry-config-propagation-test"})
+	if err != context.DeadlineExceeded {
+		t.Fatalf("expected context deadline exceeded, got %v", err)
+	}
+
+	if capturedCfg == nil {
+		t.Fatal("expected segment processor config to be captured")
+	}
+	if capturedCfg.TransientErrorRetryMaxAttempts != 4 {
+		t.Errorf("TransientErrorRetryMaxAttempts: got %d, want 4", capturedCfg.TransientErrorRetryMaxAttempts)
+	}
+}
+
 func TestNew(t *testing.T) {
 	t.Parallel()
 
@@ -585,6 +634,7 @@ func TestNew(t *testing.T) {
 				WithPollInterval(75 * time.Millisecond),
 				WithMaxPollInterval(3 * time.Second),
 				WithMaxPostBatchPause(300 * time.Millisecond),
+				WithTransientErrorRetry(5),
 				WithPollBackoffFactor(1.8),
 				WithWakeupJitter(15 * time.Millisecond),
 				WithDispatcher(false),
@@ -625,6 +675,9 @@ func TestNew(t *testing.T) {
 				}
 				if w.config.MaxPostBatchPause != 300*time.Millisecond {
 					t.Errorf("MaxPostBatchPause: got %v, want 300ms", w.config.MaxPostBatchPause)
+				}
+				if w.config.TransientErrorRetryMaxAttempts != 5 {
+					t.Errorf("TransientErrorRetryMaxAttempts: got %d, want 5", w.config.TransientErrorRetryMaxAttempts)
 				}
 				if w.config.PollBackoffFactor != 1.8 {
 					t.Errorf("PollBackoffFactor: got %v, want 1.8", w.config.PollBackoffFactor)
