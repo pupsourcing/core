@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/lib/pq"
+
 	"github.com/pupsourcing/core/es"
 	"github.com/pupsourcing/core/es/store"
 )
@@ -115,6 +117,13 @@ func NewStoreConfig(opts ...StoreOption) *StoreConfig {
 // Store is a PostgreSQL-backed event store implementation.
 type Store struct {
 	config StoreConfig
+}
+
+// ReadEventsScope applies optional bounded context and aggregate type filters
+// to sequential event reads. Empty slices disable the corresponding filter.
+type ReadEventsScope struct {
+	AggregateTypes  []string
+	BoundedContexts []string
 }
 
 // NewStore creates a new Postgres event store with the given configuration.
@@ -394,23 +403,29 @@ func findSubstring(s, substr string) bool {
 
 // ReadEvents implements store.EventReader.
 func (s *Store) ReadEvents(ctx context.Context, tx es.DBTX, fromPosition int64, limit int) ([]es.PersistedEvent, error) {
+	return s.readEvents(ctx, tx, fromPosition, limit, ReadEventsScope{})
+}
+
+// ReadEventsWithScope reads events sequentially with optional SQL-level scope filters.
+// Empty AggregateTypes or BoundedContexts mean "no filter" for that dimension.
+func (s *Store) ReadEventsWithScope(ctx context.Context, tx es.DBTX, fromPosition int64, limit int, scope ReadEventsScope) ([]es.PersistedEvent, error) {
+	return s.readEvents(ctx, tx, fromPosition, limit, scope)
+}
+
+func (s *Store) readEvents(ctx context.Context, tx es.DBTX, fromPosition int64, limit int, scope ReadEventsScope) ([]es.PersistedEvent, error) {
 	if s.config.Logger != nil {
-		s.config.Logger.Debug(ctx, "reading events", "from_position", fromPosition, "limit", limit)
+		keyvals := []interface{}{"from_position", fromPosition, "limit", limit}
+		if len(scope.BoundedContexts) > 0 {
+			keyvals = append(keyvals, "bounded_context_filters", len(scope.BoundedContexts))
+		}
+		if len(scope.AggregateTypes) > 0 {
+			keyvals = append(keyvals, "aggregate_type_filters", len(scope.AggregateTypes))
+		}
+		s.config.Logger.Debug(ctx, "reading events", keyvals...)
 	}
 
-	query := fmt.Sprintf(`
-		SELECT 
-			global_position, bounded_context, aggregate_type, aggregate_id, aggregate_version,
-			event_id, event_type, event_version,
-			payload, trace_id, correlation_id, causation_id,
-			metadata, created_at
-		FROM %s
-		WHERE global_position > $1
-		ORDER BY global_position ASC
-		LIMIT $2
-	`, s.config.EventsTable)
-
-	rows, err := tx.QueryContext(ctx, query, fromPosition, limit)
+	query, args := buildReadEventsQuery(s.config.EventsTable, fromPosition, limit, scope)
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query events: %w", err)
 	}
@@ -450,6 +465,43 @@ func (s *Store) ReadEvents(ctx context.Context, tx es.DBTX, fromPosition int64, 
 	}
 
 	return events, nil
+}
+
+func buildReadEventsQuery(
+	eventsTable string,
+	fromPosition int64,
+	limit int,
+	scope ReadEventsScope,
+) (query string, args []interface{}) {
+	query = fmt.Sprintf(`
+		SELECT 
+			global_position, bounded_context, aggregate_type, aggregate_id, aggregate_version,
+			event_id, event_type, event_version,
+			payload, trace_id, correlation_id, causation_id,
+			metadata, created_at
+		FROM %s
+		WHERE global_position > $1
+	`, eventsTable)
+
+	args = []interface{}{fromPosition}
+	nextParam := 2
+
+	if len(scope.BoundedContexts) > 0 {
+		query += fmt.Sprintf("\n\t\tAND bounded_context = ANY($%d)", nextParam)
+		args = append(args, pq.Array(scope.BoundedContexts))
+		nextParam++
+	}
+
+	if len(scope.AggregateTypes) > 0 {
+		query += fmt.Sprintf("\n\t\tAND aggregate_type = ANY($%d)", nextParam)
+		args = append(args, pq.Array(scope.AggregateTypes))
+		nextParam++
+	}
+
+	query += fmt.Sprintf("\n\t\tORDER BY global_position ASC\n\t\tLIMIT $%d\n\t", nextParam)
+	args = append(args, limit)
+
+	return query, args
 }
 
 // GetLatestGlobalPosition implements store.GlobalPositionReader.

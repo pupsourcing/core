@@ -43,6 +43,12 @@ func TestDefaultSegmentProcessorConfig(t *testing.T) {
 	if config.MaxPostBatchPause != 100*time.Millisecond {
 		t.Errorf("MaxPostBatchPause = %v, want %v", config.MaxPostBatchPause, 100*time.Millisecond)
 	}
+	if config.TransientErrorRetryMaxAttempts != 0 {
+		t.Errorf("TransientErrorRetryMaxAttempts = %d, want 0", config.TransientErrorRetryMaxAttempts)
+	}
+	if config.HealthAuditInterval != 0 {
+		t.Errorf("HealthAuditInterval = %v, want 0", config.HealthAuditInterval)
+	}
 	if config.PollBackoffFactor != 2.0 {
 		t.Errorf("PollBackoffFactor = %v, want %v", config.PollBackoffFactor, 2.0)
 	}
@@ -124,6 +130,12 @@ func TestSegmentProcessorConfig_ZeroValues(t *testing.T) {
 	if config.MaxPostBatchPause != 0 {
 		t.Errorf("zero-value MaxPostBatchPause = %v, want 0", config.MaxPostBatchPause)
 	}
+	if config.TransientErrorRetryMaxAttempts != 0 {
+		t.Errorf("zero-value TransientErrorRetryMaxAttempts = %d, want 0", config.TransientErrorRetryMaxAttempts)
+	}
+	if config.HealthAuditInterval != 0 {
+		t.Errorf("zero-value HealthAuditInterval = %v, want 0", config.HealthAuditInterval)
+	}
 	if config.PollBackoffFactor != 0.0 {
 		t.Errorf("zero-value PollBackoffFactor = %v, want 0.0", config.PollBackoffFactor)
 	}
@@ -141,17 +153,19 @@ func TestSegmentProcessorConfig_ZeroValues(t *testing.T) {
 func TestSegmentProcessorConfig_CustomValues(t *testing.T) {
 	// Test that we can set custom values
 	config := SegmentProcessorConfig{
-		TotalSegments:     32,
-		HeartbeatInterval: 10 * time.Second,
-		StaleThreshold:    60 * time.Second,
-		RebalanceInterval: 20 * time.Second,
-		BatchSize:         200,
-		PollInterval:      200 * time.Millisecond,
-		MaxPollInterval:   10 * time.Second,
-		MaxPostBatchPause: 150 * time.Millisecond,
-		PollBackoffFactor: 1.5,
-		WakeupJitter:      50 * time.Millisecond,
-		RunMode:           RunModeOneOff,
+		TotalSegments:                  32,
+		HeartbeatInterval:              10 * time.Second,
+		StaleThreshold:                 60 * time.Second,
+		RebalanceInterval:              20 * time.Second,
+		BatchSize:                      200,
+		PollInterval:                   200 * time.Millisecond,
+		MaxPollInterval:                10 * time.Second,
+		MaxPostBatchPause:              150 * time.Millisecond,
+		TransientErrorRetryMaxAttempts: 3,
+		HealthAuditInterval:            7 * time.Second,
+		PollBackoffFactor:              1.5,
+		WakeupJitter:                   50 * time.Millisecond,
+		RunMode:                        RunModeOneOff,
 	}
 
 	if config.TotalSegments != 32 {
@@ -177,6 +191,12 @@ func TestSegmentProcessorConfig_CustomValues(t *testing.T) {
 	}
 	if config.MaxPostBatchPause != 150*time.Millisecond {
 		t.Errorf("MaxPostBatchPause = %v, want %v", config.MaxPostBatchPause, 150*time.Millisecond)
+	}
+	if config.TransientErrorRetryMaxAttempts != 3 {
+		t.Errorf("TransientErrorRetryMaxAttempts = %d, want 3", config.TransientErrorRetryMaxAttempts)
+	}
+	if config.HealthAuditInterval != 7*time.Second {
+		t.Errorf("HealthAuditInterval = %v, want 7s", config.HealthAuditInterval)
 	}
 	if config.PollBackoffFactor != 1.5 {
 		t.Errorf("PollBackoffFactor = %v, want 1.5", config.PollBackoffFactor)

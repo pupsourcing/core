@@ -56,6 +56,21 @@ type Config struct {
 	// Default: 100ms
 	MaxPostBatchPause time.Duration
 
+	// TransientErrorRetryMaxAttempts retries a failed batch for retry-safe
+	// PostgreSQL transaction errors such as deadlocks (40P01) and serialization
+	// failures (40001). Retries are disabled when <= 0. Handlers should keep
+	// side effects inside the provided transaction or otherwise make them
+	// idempotent before enabling retries.
+	// Default: 0 (disabled)
+	TransientErrorRetryMaxAttempts int
+
+	// HealthAuditInterval controls how often the processor audits its worker
+	// registry entry and restores it if it has gone missing or stale while the
+	// process is still running. Set to 0 to derive the interval from
+	// StaleThreshold/2. Set to < 0 to disable the audit loop.
+	// Default: 0 (auto = StaleThreshold/2)
+	HealthAuditInterval time.Duration
+
 	// WakeupJitter is the random delay applied after receiving a wake signal.
 	// Default: 25ms
 	WakeupJitter time.Duration
@@ -90,20 +105,22 @@ type Config struct {
 // DefaultConfig returns the default Worker configuration.
 func DefaultConfig() *Config {
 	return &Config{
-		TotalSegments:          16,
-		HeartbeatInterval:      5 * time.Second,
-		StaleThreshold:         30 * time.Second,
-		RebalanceInterval:      10 * time.Second,
-		BatchSize:              100,
-		PollInterval:           100 * time.Millisecond,
-		MaxPollInterval:        5 * time.Second,
-		MaxPostBatchPause:      100 * time.Millisecond,
-		PollBackoffFactor:      2.0,
-		WakeupJitter:           25 * time.Millisecond,
-		PartitionStrategy:      consumer.HashPartitionStrategy{},
-		EnableDispatcher:       true,
-		DispatcherPollInterval: 200 * time.Millisecond,
-		Logger:                 nil,
+		TotalSegments:                  16,
+		HeartbeatInterval:              5 * time.Second,
+		StaleThreshold:                 30 * time.Second,
+		RebalanceInterval:              10 * time.Second,
+		BatchSize:                      100,
+		PollInterval:                   100 * time.Millisecond,
+		MaxPollInterval:                5 * time.Second,
+		MaxPostBatchPause:              100 * time.Millisecond,
+		TransientErrorRetryMaxAttempts: 0,
+		HealthAuditInterval:            0,
+		PollBackoffFactor:              2.0,
+		WakeupJitter:                   25 * time.Millisecond,
+		PartitionStrategy:              consumer.HashPartitionStrategy{},
+		EnableDispatcher:               true,
+		DispatcherPollInterval:         200 * time.Millisecond,
+		Logger:                         nil,
 	}
 }
 
@@ -163,6 +180,20 @@ func WithMaxPollInterval(d time.Duration) Option {
 func WithMaxPostBatchPause(d time.Duration) Option {
 	return func(c *Config) {
 		c.MaxPostBatchPause = d
+	}
+}
+
+// WithTransientErrorRetry sets the maximum number of transient batch retries.
+func WithTransientErrorRetry(maxAttempts int) Option {
+	return func(c *Config) {
+		c.TransientErrorRetryMaxAttempts = maxAttempts
+	}
+}
+
+// WithHealthAuditInterval sets the interval for worker registry self-healing audits.
+func WithHealthAuditInterval(d time.Duration) Option {
+	return func(c *Config) {
+		c.HealthAuditInterval = d
 	}
 }
 
@@ -278,19 +309,21 @@ func (w *Worker) Run(ctx context.Context, consumers ...consumer.Consumer) error 
 	runners := make([]runner.ConsumerRunner, 0, len(consumers))
 	for _, c := range consumers {
 		segCfg := &consumer.SegmentProcessorConfig{
-			PartitionStrategy: w.config.PartitionStrategy,
-			Logger:            w.config.Logger,
-			HeartbeatInterval: w.config.HeartbeatInterval,
-			StaleThreshold:    w.config.StaleThreshold,
-			RebalanceInterval: w.config.RebalanceInterval,
-			PollInterval:      w.config.PollInterval,
-			MaxPollInterval:   w.config.MaxPollInterval,
-			MaxPostBatchPause: w.config.MaxPostBatchPause,
-			WakeupJitter:      w.config.WakeupJitter,
-			PollBackoffFactor: w.config.PollBackoffFactor,
-			TotalSegments:     w.config.TotalSegments,
-			BatchSize:         w.config.BatchSize,
-			RunMode:           w.config.RunMode,
+			PartitionStrategy:              w.config.PartitionStrategy,
+			Logger:                         w.config.Logger,
+			HeartbeatInterval:              w.config.HeartbeatInterval,
+			StaleThreshold:                 w.config.StaleThreshold,
+			RebalanceInterval:              w.config.RebalanceInterval,
+			PollInterval:                   w.config.PollInterval,
+			MaxPollInterval:                w.config.MaxPollInterval,
+			MaxPostBatchPause:              w.config.MaxPostBatchPause,
+			TransientErrorRetryMaxAttempts: w.config.TransientErrorRetryMaxAttempts,
+			HealthAuditInterval:            w.config.HealthAuditInterval,
+			WakeupJitter:                   w.config.WakeupJitter,
+			PollBackoffFactor:              w.config.PollBackoffFactor,
+			TotalSegments:                  w.config.TotalSegments,
+			BatchSize:                      w.config.BatchSize,
+			RunMode:                        w.config.RunMode,
 		}
 		if wakeupSource != nil {
 			segCfg.WakeupSource = wakeupSource

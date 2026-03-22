@@ -13,6 +13,10 @@ import (
 
 var _ store.SegmentStore = (*Store)(nil)
 
+// ErrSegmentNotOwned indicates that a worker attempted to operate on a segment
+// it no longer owns.
+var ErrSegmentNotOwned = errors.New("segment not owned by worker")
+
 // InitializeSegments implements store.SegmentStore.
 func (s *Store) InitializeSegments(ctx context.Context, tx es.DBTX, consumerName string, totalSegments int) error {
 	if s.config.Logger != nil {
@@ -262,6 +266,31 @@ func (s *Store) GetSegmentCheckpoint(ctx context.Context, tx es.DBTX, consumerNa
 	return checkpoint, nil
 }
 
+func (s *Store) getOwnedSegmentCheckpoint(
+	ctx context.Context,
+	tx es.DBTX,
+	consumerName string,
+	segmentID int,
+	ownerID string,
+) (int64, error) {
+	query := fmt.Sprintf(`
+		SELECT checkpoint 
+		FROM %s
+		WHERE consumer_name = $1 AND segment_id = $2 AND owner_id = $3
+	`, s.config.SegmentsTable)
+
+	var checkpoint int64
+	err := tx.QueryRowContext(ctx, query, consumerName, segmentID, ownerID).Scan(&checkpoint)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrSegmentNotOwned
+		}
+		return 0, fmt.Errorf("failed to get owned segment checkpoint: %w", err)
+	}
+
+	return checkpoint, nil
+}
+
 // UpdateSegmentCheckpoint implements store.SegmentStore.
 func (s *Store) UpdateSegmentCheckpoint(ctx context.Context, tx es.DBTX, consumerName string, segmentID int, position int64) error {
 	if s.config.Logger != nil {
@@ -286,6 +315,52 @@ func (s *Store) UpdateSegmentCheckpoint(ctx context.Context, tx es.DBTX, consume
 		s.config.Logger.Debug(ctx, "segment checkpoint updated",
 			"consumer_name", consumerName,
 			"segment_id", segmentID,
+			"position", position)
+	}
+
+	return nil
+}
+
+func (s *Store) updateOwnedSegmentCheckpoint(
+	ctx context.Context,
+	tx es.DBTX,
+	consumerName string,
+	segmentID int,
+	ownerID string,
+	position int64,
+) error {
+	if s.config.Logger != nil {
+		s.config.Logger.Debug(ctx, "updating owned segment checkpoint",
+			"consumer_name", consumerName,
+			"segment_id", segmentID,
+			"owner_id", ownerID,
+			"position", position)
+	}
+
+	query := fmt.Sprintf(`
+		UPDATE %s 
+		SET checkpoint = $1
+		WHERE consumer_name = $2 AND segment_id = $3 AND owner_id = $4
+	`, s.config.SegmentsTable)
+
+	result, err := tx.ExecContext(ctx, query, position, consumerName, segmentID, ownerID)
+	if err != nil {
+		return fmt.Errorf("failed to update owned segment checkpoint: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return ErrSegmentNotOwned
+	}
+
+	if s.config.Logger != nil {
+		s.config.Logger.Debug(ctx, "owned segment checkpoint updated",
+			"consumer_name", consumerName,
+			"segment_id", segmentID,
+			"owner_id", ownerID,
 			"position", position)
 	}
 
@@ -336,6 +411,31 @@ func (s *Store) DeregisterWorker(ctx context.Context, tx es.DBTX, consumerName, 
 	}
 
 	return nil
+}
+
+func (s *Store) isWorkerActive(
+	ctx context.Context,
+	tx es.DBTX,
+	consumerName, workerID string,
+	staleThreshold time.Duration,
+) (bool, error) {
+	query := fmt.Sprintf(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM %s
+			WHERE consumer_name = $1
+			  AND worker_id = $2
+			  AND last_heartbeat >= NOW() - make_interval(secs => $3)
+		)
+	`, s.config.WorkerRegistryTable)
+
+	var active bool
+	err := tx.QueryRowContext(ctx, query, consumerName, workerID, staleThreshold.Seconds()).Scan(&active)
+	if err != nil {
+		return false, fmt.Errorf("failed to check worker status: %w", err)
+	}
+
+	return active, nil
 }
 
 // CountActiveWorkers implements store.SegmentStore.
